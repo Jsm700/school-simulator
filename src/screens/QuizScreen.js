@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Speech from "expo-speech";
-import { Audio } from "expo-av";
+
 import { getTeacherResponse } from "../services/ai";
 import { colors, spacing, radius } from "../theme";
 
