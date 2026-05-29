@@ -1,7 +1,7 @@
 // src/services/ai.js
 // Всички комуникации с Anthropic API
 
-const ANTHROPIC_API_KEY = "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"; // от console.anthropic.com
+const ANTHROPIC_API_KEY = "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"; // от console.anthropic.com
 const API_URL = "https://api.anthropic.com/v1/messages";
 
 const SYSTEM_PROMPT_TEMPLATE = `Ти си изключително насърчаваща, търпелива и приятелска учителка за начален курс в България. Казваш се Учителката Мария. Изпитваш ученика по конкретен урок от учебник.
