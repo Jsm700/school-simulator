@@ -4,38 +4,21 @@
     "slug": "school-simulator",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "scheme": "uchilishten",
     "userInterfaceStyle": "light",
     "backgroundColor": "#000000",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#4A90D9"
-    },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.jsm700.uchilishtensimulator",
+      "bundleIdentifier": "com.jsm700.schoolsimulator",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Нужно е за гласово въвеждане на отговори.",
         "NSMicrophoneUsageDescription": "Нужно е за гласово въвеждане на отговори."
       }
     },
     "android": {
-      "package": "com.jsm700.uchilishtensimulator",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#4A90D9"
-      },
-      "permissions": [
-        "RECORD_AUDIO",
-        "INTERNET"
-      ]
+      "package": "com.jsm700.schoolsimulator",
+      "permissions": ["RECORD_AUDIO", "INTERNET"]
     },
-    "plugins": [
-      "expo-router",
-      "expo-av"
-    ],
+    "plugins": ["expo-router"],
     "extra": {
       "eas": {
         "projectId": "34d257bd-0e08-4dfa-b707-c9e5d463b9fd"
