@@ -10,30 +10,17 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
+  PermissionsAndroid,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Speech from "expo-speech";
-
 import { getTeacherResponse } from "../services/ai";
 import { colors, spacing, radius } from "../theme";
 
-const HINT_CHIPS = [
-  { label: "💡 Подсказка", msg: "Дай ми подсказка, моля." },
-  { label: "🔄 Повтори въпроса", msg: "Можеш ли да повториш въпроса?" },
-  { label: "🌍 Съседите?", msg: "Кои са съседните страни на България?" },
-  { label: "🗺️ Кръстопът?", msg: "Какво означава кръстопътно положение?" },
-];
-
 function TopicPill({ label, done }) {
   return (
-    <View
-      style={[
-        styles.pill,
-        done ? styles.pillDone : styles.pillTodo,
-      ]}
-    >
+    <View style={[styles.pill, done ? styles.pillDone : styles.pillTodo]}>
       <Text style={[styles.pillText, done ? styles.pillTextDone : styles.pillTextTodo]}>
         {done ? "✓ " : ""}{label}
       </Text>
@@ -88,14 +75,24 @@ export default function QuizScreen({ route, navigation }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef(null);
-  const recordingRef = useRef(null);
+  const isFirstLoad = useRef(true);
+
+  // Hint chips динамично според урока
+  const hintChips = [
+    { label: "💡 Подсказка", msg: "Дай ми подсказка, моля." },
+    { label: "🔄 Повтори въпроса", msg: "Можеш ли да повториш въпроса?" },
+    ...lesson.topics.map(key => ({
+      label: `📚 ${lesson.topicLabels[key]}`,
+      msg: `Задай ми въпрос за: ${lesson.topicLabels[key]}`,
+    })),
+  ];
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
-  const speakText = useCallback(async (text) => {
-    if (isSpeaking) await Speech.stop();
+  const speakText = useCallback((text) => {
+    Speech.stop();
     setIsSpeaking(true);
     Speech.speak(text, {
       language: "bg-BG",
@@ -103,44 +100,34 @@ export default function QuizScreen({ route, navigation }) {
       onDone: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
     });
-  }, [isSpeaking]);
+  }, []);
 
   const detectTopics = useCallback((text, role) => {
     const t = text.toLowerCase();
     const updates = {};
     let pts = 0;
-
     if (role === "user") {
-      if (/румъния|сърбия|македония|гърция|турция/.test(t)) {
-        updates.neighbors = true; pts += 5;
-      }
-      if (/кръстопъ/.test(t)) {
-        updates.crossroads = true; pts += 5;
-      }
-      if (/балкан/.test(t)) {
-        updates.balkan = true; pts += 5;
-      }
+      if (/румъния|сърбия|македония|гърция|турция/.test(t)) { updates.neighbors = true; pts += 5; }
+      if (/кръстопъ/.test(t)) { updates.crossroads = true; pts += 5; }
+      if (/балкан/.test(t)) { updates.balkan = true; pts += 5; }
+      if (/мусала|рила|родопи|пирин|стара.планина/.test(t)) { updates.mountains = true; pts += 5; }
+      if (/дунав|марица|искър/.test(t)) { updates.rivers = true; pts += 5; }
     }
-    if (role === "ai" && /браво|отлично|точно|чудесно|страхотно|правилно/i.test(t)) {
-      pts += 2;
-    }
-
-    if (Object.keys(updates).length > 0) {
-      setTopicsDone((prev) => ({ ...prev, ...updates }));
-    }
-    if (pts > 0) setScore((prev) => prev + pts);
+    if (role === "ai" && /браво|отлично|точно|чудесно|страхотно|правилно/i.test(t)) { pts += 2; }
+    if (Object.keys(updates).length > 0) setTopicsDone(prev => ({ ...prev, ...updates }));
+    if (pts > 0) setScore(prev => prev + pts);
   }, []);
 
   const sendToAI = useCallback(async (userMsg, isFirst = false) => {
     setIsLoading(true);
 
-    const newMessages = isFirst
-      ? [{ role: "user", content: "Поздрави ме и задай първия въпрос по урока." }]
-      : [...messages, { role: "user", content: userMsg }];
-
-    if (!isFirst) {
+    let newMessages;
+    if (isFirst) {
+      newMessages = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
+    } else {
+      newMessages = [...messages, { role: "user", content: userMsg }];
       setMessages(newMessages);
-      setDisplayMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+      setDisplayMessages(prev => [...prev, { role: "user", text: userMsg }]);
       detectTopics(userMsg, "user");
     }
 
@@ -150,18 +137,18 @@ export default function QuizScreen({ route, navigation }) {
       const reply = await getTeacherResponse(newMessages, lesson.content);
       const fullMessages = isFirst
         ? [
-            { role: "user", content: "Поздрави ме и задай първия въпрос по урока." },
+            { role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." },
             { role: "assistant", content: reply },
           ]
         : [...newMessages, { role: "assistant", content: reply }];
 
       setMessages(fullMessages);
-      setDisplayMessages((prev) => [...prev, { role: "ai", text: reply }]);
+      setDisplayMessages(prev => [...prev, { role: "ai", text: reply }]);
       detectTopics(reply, "ai");
       speakText(reply);
     } catch (err) {
       const errMsg = "Съжалявам, имаше проблем с връзката. Провери интернета и опитай пак! 🙏";
-      setDisplayMessages((prev) => [...prev, { role: "ai", text: errMsg }]);
+      setDisplayMessages(prev => [...prev, { role: "ai", text: errMsg }]);
     }
 
     setIsLoading(false);
@@ -169,7 +156,10 @@ export default function QuizScreen({ route, navigation }) {
   }, [messages, lesson, detectTopics, speakText, scrollToBottom]);
 
   useEffect(() => {
-    sendToAI("", true);
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      sendToAI("", true);
+    }
   }, []);
 
   const handleSend = useCallback(() => {
@@ -182,44 +172,58 @@ export default function QuizScreen({ route, navigation }) {
   const handleChip = useCallback((msg) => {
     if (isLoading) return;
     sendToAI(msg);
-    setDisplayMessages((prev) => [...prev, { role: "user", text: msg }]);
+    setDisplayMessages(prev => [...prev, { role: "user", text: msg }]);
   }, [isLoading, sendToAI]);
 
-  const toggleRecording = useCallback(async () => {
+  const toggleMic = useCallback(async () => {
     if (isRecording) {
       setIsRecording(false);
-      if (recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
-        recordingRef.current = null;
-      }
-      // NOTE: Real speech-to-text needs a backend or Whisper API
-      // За сега показва placeholder - в следваща версия добавяме Whisper
-      Alert.alert(
-        "Гласово въвеждане",
-        "В тази версия моля използвай клавиатурата. Гласовото разпознаване идва в следващата версия!",
-        [{ text: "Добре" }]
-      );
       return;
     }
 
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Нямам достъп до микрофона", "Дай разрешение в Настройки.");
+      if (Platform.OS === "android") {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          return;
+        }
+      }
+
+      // Използваме вградения Android speech recognizer
+      const SpeechRecognition =
+        global.SpeechRecognition || global.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        // Fallback — показваме hint
+        setInputText("(Напиши отговора с клавиатурата)");
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = "bg-BG";
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
       setIsRecording(true);
+
+      recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript;
+        setInputText(text);
+        setIsRecording(false);
+      };
+
+      recognition.onerror = () => setIsRecording(false);
+      recognition.onend = () => setIsRecording(false);
+
+      recognition.start();
     } catch (err) {
-      Alert.alert("Грешка", "Не мога да стартирам микрофона.");
+      setIsRecording(false);
     }
   }, [isRecording]);
 
-  const topicEntries = lesson.topics.map((key) => ({
+  const topicEntries = lesson.topics.map(key => ({
     key,
     label: lesson.topicLabels[key],
     done: !!topicsDone[key],
@@ -229,10 +233,10 @@ export default function QuizScreen({ route, navigation }) {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => {
-          Speech.stop();
-          navigation.goBack();
-        }} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => { Speech.stop(); navigation.goBack(); }}
+          style={styles.backBtn}
+        >
           <Ionicons name="arrow-back" size={20} color="#fff" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -253,7 +257,7 @@ export default function QuizScreen({ route, navigation }) {
         <Text style={styles.scoreText}>⭐ {score} точки</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1, marginLeft: 8 }}>
           <View style={{ flexDirection: "row", gap: 6 }}>
-            {topicEntries.map((t) => (
+            {topicEntries.map(t => (
               <TopicPill key={t.key} label={t.label} done={t.done} />
             ))}
           </View>
@@ -263,7 +267,6 @@ export default function QuizScreen({ route, navigation }) {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
       >
         {/* Chat */}
         <ScrollView
@@ -281,14 +284,13 @@ export default function QuizScreen({ route, navigation }) {
 
         {/* Input */}
         <View style={styles.inputContainer}>
-          {/* Hint chips */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.chipsRow}
             contentContainerStyle={{ gap: 6, paddingHorizontal: spacing.lg }}
           >
-            {HINT_CHIPS.map((c) => (
+            {hintChips.map(c => (
               <TouchableOpacity
                 key={c.label}
                 style={styles.chip}
@@ -300,7 +302,6 @@ export default function QuizScreen({ route, navigation }) {
             ))}
           </ScrollView>
 
-          {/* Text row */}
           <View style={styles.inputRow}>
             <TextInput
               style={styles.textInput}
@@ -310,13 +311,11 @@ export default function QuizScreen({ route, navigation }) {
               placeholderTextColor={colors.muted}
               multiline
               maxLength={500}
-              onSubmitEditing={handleSend}
-              blurOnSubmit={false}
               editable={!isLoading}
             />
             <TouchableOpacity
               style={[styles.micBtn, isRecording && styles.micBtnRecording]}
-              onPress={toggleRecording}
+              onPress={toggleMic}
               disabled={isLoading}
             >
               <Ionicons
@@ -334,7 +333,7 @@ export default function QuizScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
           <Text style={styles.micHint}>
-            {isRecording ? "Записва... Натисни за спиране" : "🎙️ Натисни за гласов отговор"}
+            {isRecording ? "Слушам... Натисни за спиране" : "🎙️ Натисни за гласов отговор"}
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -370,11 +369,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#C0DD97",
   },
   scoreText: { fontSize: 13, fontWeight: "700", color: "#3B6D11" },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-  },
+  pill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.full },
   pillDone: { backgroundColor: colors.pillDone },
   pillTodo: { backgroundColor: colors.pillTodo },
   pillText: { fontSize: 11, fontWeight: "600" },
@@ -416,12 +411,10 @@ const styles = StyleSheet.create({
   },
   chipsRow: { marginBottom: spacing.sm },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: radius.full,
     backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.border,
   },
   chipText: { fontSize: 12, color: colors.text },
   inputRow: {
@@ -432,14 +425,11 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    borderWidth: 1.5, borderColor: colors.border,
     borderRadius: 20,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
     backgroundColor: colors.card,
-    fontSize: 15,
-    color: colors.text,
+    fontSize: 15, color: colors.text,
     maxHeight: 100,
   },
   micBtn: {
@@ -456,10 +446,5 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
-  micHint: {
-    textAlign: "center",
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 5,
-  },
+  micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
