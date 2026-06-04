@@ -43,11 +43,6 @@ export async function getTeacherResponse(messages, lessonContent) {
     }),
   });
 
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err.error?.message || "API грешка");
-  }
-
   const data = await response.json();
-   return data.content?.map((c) => c.text || "").join("") || "";
+return data.content?.map((c) => c.text || "").join("") || JSON.stringify(data);
 }
