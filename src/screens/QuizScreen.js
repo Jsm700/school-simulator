@@ -139,8 +139,7 @@ export default function QuizScreen({ route, navigation }) {
 
     try {
       const reply = await getTeacherResponse(messagesToSend, lesson.content);
-      console.log("Reply received:", reply);
-      const withReply = [...messagesToSend, { role: "assistant", content: reply }];
+            const withReply = [...messagesToSend, { role: "assistant", content: reply }];
       
       messagesRef.current = withReply;
       setMessages(withReply);
