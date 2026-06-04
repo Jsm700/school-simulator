@@ -147,7 +147,7 @@ export default function QuizScreen({ route, navigation }) {
       detectTopics(reply, "ai");
       speakText(reply);
     } catch (error) {
-      setDisplayMessages(d => [...d, { role: "ai", text: "Съжалявам, имаше проблем! Опитай пак 🙏" }]);
+      setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
       setIsLoading(false);
       setTimeout(() => scrollToBottom(), 100);
