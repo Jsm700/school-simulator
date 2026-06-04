@@ -76,7 +76,9 @@ export default function QuizScreen({ route, navigation }) {
   const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
+  const messagesRef = useRef([]); // Синхронно следене на съобщенията
 
+  // Hint chips динамично според урока
   const hintChips = [
     { label: "💡 Подсказка", msg: "Дай ми подсказка, моля." },
     { label: "🔄 Повтори въпроса", msg: "Можеш ли да повториш въпроса?" },
@@ -105,6 +107,7 @@ export default function QuizScreen({ route, navigation }) {
     const t = text.toLowerCase();
     const updates = {};
     let pts = 0;
+    
     if (role === "user") {
       if (/румъния|сърбия|македония|гърция|турция/.test(t)) { updates.neighbors = true; pts += 5; }
       if (/кръстопъ/.test(t)) { updates.crossroads = true; pts += 5; }
@@ -121,28 +124,30 @@ export default function QuizScreen({ route, navigation }) {
     setIsLoading(true);
     scrollToBottom();
 
-    let updatedMessages = [];
+    let messagesToSend = [];
 
     if (isFirst) {
-      updatedMessages = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
-      setMessages(updatedMessages);
+      messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
     } else {
-      setMessages(prev => {
-        updatedMessages = [...prev, { role: "user", content: userMsg }];
-        return updatedMessages;
-      });
+      messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
       detectTopics(userMsg, "user");
     }
 
+    messagesRef.current = messagesToSend;
+    setMessages(messagesToSend);
+
     try {
-      const reply = await getTeacherResponse(updatedMessages, lesson.content);
-      setMessages(m => [...m, { role: "assistant", content: reply }]);
+      const reply = await getTeacherResponse(messagesToSend, lesson.content);
+      const withReply = [...messagesToSend, { role: "assistant", content: reply }];
+      
+      messagesRef.current = withReply;
+      setMessages(withReply);
       setDisplayMessages(d => [...d, { role: "ai", text: reply }]);
       detectTopics(reply, "ai");
       speakText(reply);
     } catch (error) {
-      setDisplayMessages(d => [...d, { role: "ai", text: "Съжалявам, имаше проблем с връзката. Провери интернета и опитай пак! 🙏" }]);
+      setDisplayMessages(d => [...d, { role: "ai", text: "Съжалявам, имаше проблем! Опитай пак 🙏" }]);
     } finally {
       setIsLoading(false);
       setTimeout(() => scrollToBottom(), 100);
