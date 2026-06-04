@@ -172,8 +172,7 @@ export default function QuizScreen({ route, navigation }) {
   const handleChip = useCallback((msg) => {
     if (isLoading) return;
     sendToAI(msg);
-    setDisplayMessages(prev => [...prev, { role: "user", text: msg }]);
-  }, [isLoading, sendToAI]);
+      }, [isLoading, sendToAI]);
 
   const toggleMic = useCallback(async () => {
     if (isRecording) {
