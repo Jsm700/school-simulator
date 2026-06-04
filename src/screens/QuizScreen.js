@@ -77,7 +77,6 @@ export default function QuizScreen({ route, navigation }) {
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
 
-  // Hint chips динамично според урока
   const hintChips = [
     { label: "💡 Подсказка", msg: "Дай ми подсказка, моля." },
     { label: "🔄 Повтори въпроса", msg: "Можеш ли да повториш въпроса?" },
@@ -120,47 +119,42 @@ export default function QuizScreen({ route, navigation }) {
 
   const sendToAI = useCallback(async (userMsg, isFirst = false) => {
     setIsLoading(true);
+    scrollToBottom();
 
-    let newMessages;
+    let updatedMessages = [];
+
     if (isFirst) {
-      newMessages = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
+      updatedMessages = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
+      setMessages(updatedMessages);
     } else {
-      newMessages = [...messages, { role: "user", content: userMsg }];
-      setMessages(newMessages);
-      setDisplayMessages(prev => [...prev, { role: "user", text: userMsg }]);
+      setMessages(prev => {
+        updatedMessages = [...prev, { role: "user", content: userMsg }];
+        return updatedMessages;
+      });
+      setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
       detectTopics(userMsg, "user");
     }
 
-    scrollToBottom();
-
     try {
-      const reply = await getTeacherResponse(newMessages, lesson.content);
-      const fullMessages = isFirst
-        ? [
-            { role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." },
-            { role: "assistant", content: reply },
-          ]
-        : [...newMessages, { role: "assistant", content: reply }];
-
-      setMessages(fullMessages);
-      setDisplayMessages(prev => [...prev, { role: "ai", text: reply }]);
+      const reply = await getTeacherResponse(updatedMessages, lesson.content);
+      setMessages(m => [...m, { role: "assistant", content: reply }]);
+      setDisplayMessages(d => [...d, { role: "ai", text: reply }]);
       detectTopics(reply, "ai");
       speakText(reply);
-    } catch (err) {
-      const errMsg = "Съжалявам, имаше проблем с връзката. Провери интернета и опитай пак! 🙏";
-      setDisplayMessages(prev => [...prev, { role: "ai", text: errMsg }]);
+    } catch (error) {
+      setDisplayMessages(d => [...d, { role: "ai", text: "Съжалявам, имаше проблем с връзката. Провери интернета и опитай пак! 🙏" }]);
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => scrollToBottom(), 100);
     }
-
-    setIsLoading(false);
-    scrollToBottom();
-  }, [messages, lesson, detectTopics, speakText, scrollToBottom]);
+  }, [lesson, detectTopics, speakText, scrollToBottom]);
 
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
       sendToAI("", true);
     }
-  }, []);
+  }, [sendToAI]);
 
   const handleSend = useCallback(() => {
     const text = inputText.trim();
@@ -172,50 +166,36 @@ export default function QuizScreen({ route, navigation }) {
   const handleChip = useCallback((msg) => {
     if (isLoading) return;
     sendToAI(msg);
-      }, [isLoading, sendToAI]);
+  }, [isLoading, sendToAI]);
 
   const toggleMic = useCallback(async () => {
     if (isRecording) {
       setIsRecording(false);
       return;
     }
-
     try {
       if (Platform.OS === "android") {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
         );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          return;
-        }
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
       }
-
-      // Използваме вградения Android speech recognizer
-      const SpeechRecognition =
-        global.SpeechRecognition || global.webkitSpeechRecognition;
-
+      const SpeechRecognition = global.SpeechRecognition || global.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        // Fallback — показваме hint
         setInputText("(Напиши отговора с клавиатурата)");
         return;
       }
-
       const recognition = new SpeechRecognition();
       recognition.lang = "bg-BG";
       recognition.continuous = false;
       recognition.interimResults = false;
-
       setIsRecording(true);
-
       recognition.onresult = (event) => {
-        const text = event.results[0][0].transcript;
-        setInputText(text);
+        setInputText(event.results[0][0].transcript);
         setIsRecording(false);
       };
-
       recognition.onerror = () => setIsRecording(false);
       recognition.onend = () => setIsRecording(false);
-
       recognition.start();
     } catch (err) {
       setIsRecording(false);
@@ -230,7 +210,6 @@ export default function QuizScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => { Speech.stop(); navigation.goBack(); }}
@@ -251,7 +230,6 @@ export default function QuizScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Score + Topics */}
       <View style={styles.scorebar}>
         <Text style={styles.scoreText}>⭐ {score} точки</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1, marginLeft: 8 }}>
@@ -263,11 +241,7 @@ export default function QuizScreen({ route, navigation }) {
         </ScrollView>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {/* Chat */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
           ref={scrollRef}
           style={styles.chatArea}
@@ -281,7 +255,6 @@ export default function QuizScreen({ route, navigation }) {
           <View style={{ height: 16 }} />
         </ScrollView>
 
-        {/* Input */}
         <View style={styles.inputContainer}>
           <ScrollView
             horizontal
