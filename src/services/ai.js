@@ -49,6 +49,6 @@ export async function getTeacherResponse(messages, lessonContent) {
   }
 
   const data = await response.json();
-  console.log("Reply received:", reply);
+  console.log("API response:", JSON.stringify(data));
   return data.content?.map((c) => c.text || "").join("") || "";
 }
