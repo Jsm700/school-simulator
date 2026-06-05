@@ -96,7 +96,6 @@ export default function QuizScreen({ route, navigation }) {
     Speech.stop();
     setIsSpeaking(true);
     Speech.speak(text, {
-      language: "bg-BG",
       rate: 0.9,
       onDone: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
