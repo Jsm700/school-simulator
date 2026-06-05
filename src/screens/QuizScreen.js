@@ -92,15 +92,42 @@ export default function QuizScreen({ route, navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
-  const speakText = useCallback((text) => {
-    Speech.stop();
-    setIsSpeaking(true);
+  const speakText = useCallback(async (text) => {
+  Speech.stop();
+  setIsSpeaking(true);
+
+  try {
+    const voices = await Speech.getAvailableVoicesAsync();
+    const bgVoice = voices.find(v => 
+      v.language?.toLowerCase().startsWith("bg") || 
+      v.identifier?.toLowerCase().includes("bg")
+    );
+
+    // Базови опции, които винаги присъстват
+    const options = {
+      rate: 0.9,
+      onDone: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    };
+
+    // САМО ако реално съществува български глас на телефона, го добавяме в настройките
+    if (bgVoice && bgVoice.identifier) {
+      options.voice = bgVoice.identifier;
+    } else {
+      // Fallback за другите ливади: ако няма БГ глас, казваме на системата поне да се опита да прочете езика
+      options.language = "bg-BG";
+    }
+
+    Speech.speak(text, options);
+  } catch (error) {
+    // Пълна застраховка в случай на софтуерен срив
     Speech.speak(text, {
       rate: 0.9,
       onDone: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
     });
-  }, []);
+  }
+}, []);
 
   const detectTopics = useCallback((text, role) => {
     const t = text.toLowerCase();
