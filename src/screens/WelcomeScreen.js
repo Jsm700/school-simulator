@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -78,11 +79,20 @@ export default function WelcomeScreen({ navigation }) {
   const [publisher, setPublisher] = useState("klett");
   const [selectedLesson, setSelectedLesson] = useState(null);
 
+  // Нови полета за ученика
+  const [studentName, setStudentName] = useState("");
+  const [studentGender, setStudentGender] = useState("male");
+
   const lessonGroup = getLessons(classVal, subject, publisher);
 
   const handleStart = () => {
     if (!selectedLesson) return;
-    navigation.navigate("Quiz", { lesson: selectedLesson });
+    navigation.navigate("Quiz", {
+      lesson: selectedLesson,
+      studentName: studentName.trim() || "ученико",
+      studentGender: studentGender,
+      studentGrade: classVal,
+    });
   };
 
   return (
@@ -105,6 +115,41 @@ export default function WelcomeScreen({ navigation }) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Student Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>👤 За ученика</Text>
+
+          <Text style={styles.pickerLabel}>Име</Text>
+          <TextInput
+            style={styles.nameInput}
+            value={studentName}
+            onChangeText={setStudentName}
+            placeholder="Напр. Иван или Мария"
+            placeholderTextColor={colors.muted}
+            maxLength={30}
+          />
+
+          <Text style={[styles.pickerLabel, { marginTop: spacing.md }]}>Пол</Text>
+          <View style={styles.genderRow}>
+            <TouchableOpacity
+              style={[styles.genderBtn, studentGender === "male" && styles.genderBtnActive]}
+              onPress={() => setStudentGender("male")}
+            >
+              <Text style={[styles.genderText, studentGender === "male" && styles.genderTextActive]}>
+                👦 Момче
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.genderBtn, studentGender === "female" && styles.genderBtnActive]}
+              onPress={() => setStudentGender("female")}
+            >
+              <Text style={[styles.genderText, studentGender === "female" && styles.genderTextActive]}>
+                👧 Момиче
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Settings Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>⚙️ Настройки</Text>
@@ -199,16 +244,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  headerSub: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    marginTop: 2,
-  },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  headerSub: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 2 },
   scroll: { flex: 1, backgroundColor: colors.background },
   scrollContent: { padding: spacing.lg },
   card: {
@@ -219,12 +256,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     marginBottom: spacing.md,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
-    marginBottom: spacing.lg,
-  },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: spacing.lg },
   pickerGroup: { marginBottom: spacing.md },
   pickerLabel: {
     fontSize: 11,
@@ -264,6 +296,28 @@ const styles = StyleSheet.create({
   dropdownItemActive: { backgroundColor: colors.primaryLight },
   dropdownText: { fontSize: 15, color: colors.text },
   dropdownTextActive: { color: colors.primary, fontWeight: "600" },
+  nameInput: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.background,
+    fontSize: 15,
+    color: colors.text,
+  },
+  genderRow: { flexDirection: "row", gap: spacing.sm },
+  genderBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: "center",
+    backgroundColor: colors.background,
+  },
+  genderBtnActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  genderText: { fontSize: 15, color: colors.muted, fontWeight: "600" },
+  genderTextActive: { color: colors.primary },
   lessonCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -275,23 +329,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     backgroundColor: colors.background,
   },
-  lessonCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
+  lessonCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   lessonNum: {
-    width: 34,
-    height: 34,
+    width: 34, height: 34,
     borderRadius: radius.sm,
     backgroundColor: colors.primaryLight,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
-  lessonNumText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: colors.primaryDark,
-  },
+  lessonNumText: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
   lessonTitle: { fontSize: 14, fontWeight: "600", color: colors.text },
   lessonSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   infoBanner: {
