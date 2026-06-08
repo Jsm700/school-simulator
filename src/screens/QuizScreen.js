@@ -162,24 +162,27 @@ export default function QuizScreen({ route, navigation }) {
 
     messagesRef.current = messagesToSend;
     setMessages(messagesToSend);
+    
+try {
+  const reply = await getTeacherResponse(
+    messagesToSend,
+    lesson.content,
+    route.params.studentName,
+    route.params.studentGender,
+    route.params.studentGrade
+  );
 
-    try {
-      const reply = await getTeacherResponse(
-  messagesToSend,
-  lesson.content,
-  route.params.studentName,
-  route.params.studentGender,
-  route.params.studentGrade
-);
-      
-      messagesRef.current = withReply;
-      setMessages(withReply);
-      setDisplayMessages(d => [...d, { role: "ai", text: reply }]);
-      detectTopics(reply, "ai");
-      speakText(reply);
-    } catch (error) {
-      setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
-    } finally {
+  const withReply = [...messagesToSend, { role: "assistant", content: reply }];
+
+  messagesRef.current = withReply;
+  setMessages(withReply);
+  setDisplayMessages(d => [...d, { role: "ai", text: reply }]);
+  detectTopics(reply, "ai");
+  speakText(reply);
+} catch (error) {
+  setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
+}
+        } finally {
       setIsLoading(false);
       setTimeout(() => scrollToBottom(), 100);
     }
