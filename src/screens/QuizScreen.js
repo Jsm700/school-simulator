@@ -180,9 +180,8 @@ try {
   detectTopics(reply, "ai");
   speakText(reply);
 } catch (error) {
-  setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
-}
-        } finally {
+      setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
+    } finally {
       setIsLoading(false);
       setTimeout(() => scrollToBottom(), 100);
     }
