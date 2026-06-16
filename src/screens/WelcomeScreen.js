@@ -127,6 +127,8 @@ export default function WelcomeScreen({ navigation }) {
             placeholder="Напр. Иван или Мария"
             placeholderTextColor={colors.muted}
             maxLength={30}
+blurOnSubmit={false}
+returnKeyType="done"
           />
 
           <Text style={[styles.pickerLabel, { marginTop: spacing.md }]}>Пол</Text>
