@@ -65,7 +65,7 @@ function TypingIndicator() {
 
 export default function QuizScreen({ route, navigation }) {
   const { lesson } = route.params;
-
+console.log("PARAMS:", JSON.stringify(route.params));
   const [messages, setMessages] = useState([]);
   const [displayMessages, setDisplayMessages] = useState([]);
   const [inputText, setInputText] = useState("");
