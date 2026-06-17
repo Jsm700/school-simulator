@@ -89,7 +89,7 @@ export default function WelcomeScreen({ navigation }) {
     if (!selectedLesson) return;
     navigation.navigate("Quiz", {
       lesson: selectedLesson,
-      studentName: studentName.trim() || "ученико",
+      studentName: studentName || "Тони",
       studentGender: studentGender,
       studentGrade: classVal,
     });
