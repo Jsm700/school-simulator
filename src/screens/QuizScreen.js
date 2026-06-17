@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
+  Alert,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -65,6 +66,7 @@ function TypingIndicator() {
 
 export default function QuizScreen({ route, navigation }) {
   const { lesson } = route.params;
+  Alert.alert("DEBUG", "Name: " + route.params.studentName + " Gender: " + route.params.studentGender);
 console.log("PARAMS:", JSON.stringify(route.params));
   const [messages, setMessages] = useState([]);
   const [displayMessages, setDisplayMessages] = useState([]);
