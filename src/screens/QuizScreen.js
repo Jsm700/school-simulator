@@ -15,8 +15,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Speech from "expo-speech";
-import { getTeacherResponse } from "../services/ai";
+import { Audio } from "expo-av";
+import { getTeacherResponse, getAudio } from "../services/ai";
+import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 
 function TopicPill({ label, done }) {
@@ -64,10 +65,12 @@ function TypingIndicator() {
   );
 }
 
-export default function QuizScreen({ route, navigation }) {
-  const { lesson } = route.params;
-  Alert.alert("DEBUG", "Name: " + route.params.studentName + " Gender: " + route.params.studentGender);
-console.log("PARAMS:", JSON.stringify(route.params));
+export default function QuizScreen({ navigation }) {
+  const params = useLocalSearchParams();
+  const lesson = JSON.parse(params.lesson);
+  const studentName = params.studentName;
+  const studentGender = params.studentGender;
+  const studentGrade = params.studentGrade;
   const [messages, setMessages] = useState([]);
   const [displayMessages, setDisplayMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -94,42 +97,25 @@ console.log("PARAMS:", JSON.stringify(route.params));
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
-  const speakText = useCallback(async (text) => {
-  Speech.stop();
-  setIsSpeaking(true);
-
-  try {
-    const voices = await Speech.getAvailableVoicesAsync();
-    const bgVoice = voices.find(v => 
-      v.language?.toLowerCase().startsWith("bg") || 
-      v.identifier?.toLowerCase().includes("bg")
-    );
-
-    // Базови опции, които винаги присъстват
-    const options = {
-      rate: 0.9,
-      onDone: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    };
-
-    // САМО ако реално съществува български глас на телефона, го добавяме в настройките
-    if (bgVoice && bgVoice.identifier) {
-      options.voice = bgVoice.identifier;
-    } else {
-      // Fallback за другите ливади: ако няма БГ глас, казваме на системата поне да се опита да прочете езика
-      options.language = "bg-BG";
+  const speakText = useCallback(async (base64Audio) => {
+    if (!base64Audio) return;
+    setIsSpeaking(true);
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: `data:audio/wav;base64,${base64Audio}` },
+        { shouldPlay: true }
+      );
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          setIsSpeaking(false);
+          sound.unloadAsync();
+        }
+      });
+    } catch (e) {
+      setIsSpeaking(false);
     }
-
-    Speech.speak(text, options);
-  } catch (error) {
-    // Пълна застраховка в случай на софтуерен срив
-    Speech.speak(text, {
-      rate: 0.9,
-      onDone: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    });
-  }
-}, []);
+  }, []);
 
   const detectTopics = useCallback((text, role) => {
     const t = text.toLowerCase();
@@ -166,21 +152,25 @@ console.log("PARAMS:", JSON.stringify(route.params));
     setMessages(messagesToSend);
     
 try {
-  const reply = await getTeacherResponse(
+  const response = await getTeacherResponse(
     messagesToSend,
     lesson.content,
-    route.params.studentName,
-    route.params.studentGender,
-    route.params.studentGrade
+    studentName,
+    studentGender,
+    studentGrade
   );
 
-  const withReply = [...messagesToSend, { role: "assistant", content: reply }];
+  const withReply = [...messagesToSend, { role: "assistant", content: response.text }];
 
   messagesRef.current = withReply;
   setMessages(withReply);
-  setDisplayMessages(d => [...d, { role: "ai", text: reply }]);
-  detectTopics(reply, "ai");
-  speakText(reply);
+  setDisplayMessages(d => [...d, { role: "ai", text: response.text }]);
+  detectTopics(response.text || "", "ai");
+  setIsLoading(false);
+
+  getAudio(response.text).then(audio => {
+    if (audio) speakText(audio);
+  });
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
@@ -252,7 +242,7 @@ try {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => { Speech.stop(); navigation.goBack(); }}
+          onPress={() => { navigation.goBack(); }}
           style={styles.backBtn}
         >
           <Ionicons name="arrow-back" size={20} color="#fff" />
@@ -261,7 +251,7 @@ try {
           <Text style={styles.headerTitle} numberOfLines={1}>{lesson.title}</Text>
           <Text style={styles.headerSub}>{lesson.subtitle}</Text>
         </View>
-        <TouchableOpacity onPress={() => isSpeaking ? Speech.stop() : null}>
+        <TouchableOpacity onPress={() => setIsSpeaking(false)}>
           <Ionicons
             name={isSpeaking ? "volume-high" : "volume-medium-outline"}
             size={22}
