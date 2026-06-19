@@ -22,8 +22,10 @@
       ]
     },
     "plugins": [
+      "expo-font",
       "expo-router",
-      "expo-asset"
+      "expo-asset",
+      "expo-speech-recognition"
     ],
     "extra": {
       "eas": {
