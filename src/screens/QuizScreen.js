@@ -310,18 +310,14 @@ try {
               onPress={toggleMic}
               disabled={isLoading}
             >
-              <Ionicons
-                name={isRecording ? "stop" : "mic"}
-                size={22}
-                color={isRecording ? "#fff" : colors.primary}
-              />
+              <Text style={{ fontSize: 20 }}>{isRecording ? "⏹️" : "🎤"}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.sendBtn, (!inputText.trim() || isLoading) && styles.sendBtnDisabled]}
               onPress={handleSend}
               disabled={!inputText.trim() || isLoading}
             >
-              <Ionicons name="send" size={20} color="#fff" />
+              <Text style={{ fontSize: 20 }}>🚀</Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.micHint}>
