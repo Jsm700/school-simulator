@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import { getTeacherResponse, getAudio } from "../services/ai";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
@@ -198,35 +199,24 @@ try {
     sendToAI(msg);
   }, [isLoading, sendToAI]);
 
+  useSpeechRecognitionEvent("result", (event) => {
+    if (event.results?.[0]?.transcript) {
+      setInputText(event.results[0].transcript);
+    }
+  });
+  useSpeechRecognitionEvent("end", () => { setIsRecording(false); });
+  useSpeechRecognitionEvent("error", () => { setIsRecording(false); });
   const toggleMic = useCallback(async () => {
     if (isRecording) {
+      ExpoSpeechRecognitionModule.stop();
       setIsRecording(false);
       return;
     }
     try {
-      if (Platform.OS === "android") {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
-        );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
-      }
-      const SpeechRecognition = global.SpeechRecognition || global.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        setInputText("(Напиши отговора с клавиатурата)");
-        return;
-      }
-      const recognition = new SpeechRecognition();
-      recognition.lang = "bg-BG";
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) return;
       setIsRecording(true);
-      recognition.onresult = (event) => {
-        setInputText(event.results[0][0].transcript);
-        setIsRecording(false);
-      };
-      recognition.onerror = () => setIsRecording(false);
-      recognition.onend = () => setIsRecording(false);
-      recognition.start();
+      ExpoSpeechRecognitionModule.start({ lang: "bg-BG", continuous: false, interimResults: false });
     } catch (err) {
       setIsRecording(false);
     }
