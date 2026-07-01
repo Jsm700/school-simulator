@@ -9,6 +9,7 @@ export async function getTeacherResponse(messages, lessonContent, studentName, s
       action: "chat",
       messages,
       lessonContent,
+      lessonKey: lessonKey || "",
       studentName: studentName || "ученико",
       studentGender: studentGender || "male",
       studentGrade: studentGrade || "3",
