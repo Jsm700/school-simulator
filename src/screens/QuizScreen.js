@@ -153,12 +153,13 @@ export default function QuizScreen({ navigation }) {
     setMessages(messagesToSend);
     
 try {
-  const response = await getTeacherResponse(
+ const response = await getTeacherResponse(
     messagesToSend,
-    lesson.content,
+    lesson.content || "",
     studentName,
     studentGender,
-    studentGrade
+    studentGrade,
+    lesson.kvKey || ""
   );
 
   const withReply = [...messagesToSend, { role: "assistant", content: response.text }];
