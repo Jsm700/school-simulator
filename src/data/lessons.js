@@ -144,6 +144,7 @@ export const CLASS_OPTIONS = [
 ];
 
 export const SUBJECT_OPTIONS = [
+  { value: "human_nature", label: "Човекът и природата" },
   { value: "human_society", label: "Човекът и обществото" },
   { value: "history", label: "История и цивилизации" },
   { value: "geography", label: "География и икономика" },
