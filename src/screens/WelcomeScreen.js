@@ -17,6 +17,18 @@ import {
   PUBLISHER_OPTIONS,
   getLessons,
 } from "../data/lessons";
+
+const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
+
+async function fetchIndex() {
+  const res = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "kv_get", key: "index" }),
+  });
+  const data = await res.json();
+  return data.value ? JSON.parse(data.value) : null;
+}
 import { colors, spacing, radius } from "../theme";
 
 function Picker({ label, options, value, onChange }) {
@@ -75,15 +87,26 @@ function Picker({ label, options, value, onChange }) {
 
 export default function WelcomeScreen({ navigation }) {
   const [classVal, setClassVal] = useState("4");
-  const [subject, setSubject] = useState("human_society");
+  const [subject, setSubject] = useState("human_nature");
   const [publisher, setPublisher] = useState("klett");
   const [selectedLesson, setSelectedLesson] = useState(null);
+  const [kvIndex, setKvIndex] = useState(null);
+
+  React.useEffect(() => {
+    fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
+  }, []);
+
+  const lessonGroup = (() => {
+    const key = `${classVal}_${subject}_${publisher}`;
+    if (kvIndex && kvIndex[key]) return kvIndex[key];
+    return getLessons(classVal, subject, publisher);
+  })();
 
   // Нови полета за ученика
   const [studentName, setStudentName] = useState("");
   const [studentGender, setStudentGender] = useState("male");
 
-  const lessonGroup = getLessons(classVal, subject, publisher);
+
 
   const handleStart = () => {
     if (!selectedLesson) return;
