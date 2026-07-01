@@ -1,7 +1,7 @@
 // src/services/ai.js
 const API_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 
-export async function getTeacherResponse(messages, lessonContent, studentName, studentGender, studentGrade) {
+export async function getTeacherResponse(messages, lessonContent, studentName, studentGender, studentGrade, lessonKey) {
   const response = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
