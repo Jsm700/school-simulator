@@ -118,6 +118,31 @@ export default function QuizScreen({ navigation }) {
     }
   }, []);
 
+  const speakChunks = useCallback(async (chunks) => {
+    if (!chunks || chunks.length === 0) return;
+    setIsSpeaking(true);
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      for (const chunk of chunks) {
+        await new Promise(async (resolve) => {
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: `data:audio/wav;base64,${chunk}` },
+            { shouldPlay: true }
+          );
+          sound.setOnPlaybackStatusUpdate((status) => {
+            if (status.didJustFinish) {
+              sound.unloadAsync();
+              resolve();
+            }
+          });
+        });
+      }
+    } catch (e) {
+    } finally {
+      setIsSpeaking(false);
+    }
+  }, []);
+
   const detectTopics = useCallback((text, role) => {
     const t = text.toLowerCase();
     const updates = {};
@@ -170,9 +195,13 @@ try {
   detectTopics(response.text || "", "ai");
   setIsLoading(false);
 
-  getAudio(response.text).then(audio => {
-    if (audio) speakText(audio);
-  });
+  if (response.audioChunks && response.audioChunks.length > 0) {
+    speakChunks(response.audioChunks);
+  } else {
+    getAudio(response.text).then(audio => {
+      if (audio) speakText(audio);
+    });
+  }
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
