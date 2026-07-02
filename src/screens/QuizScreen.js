@@ -118,37 +118,6 @@ export default function QuizScreen({ navigation }) {
     }
   }, []);
 
-  const speakChunks = useCallback(async (chunks) => {
-    if (!chunks || chunks.length === 0) return;
-    setIsSpeaking(true);
-    try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      for (const chunk of chunks) {
-        await new Promise((resolve) => {
-          let resolved = false;
-          Audio.Sound.createAsync(
-            { uri: `data:audio/wav;base64,${chunk}` },
-            { shouldPlay: true }
-          ).then(({ sound }) => {
-            sound.setOnPlaybackStatusUpdate((status) => {
-              if ((status.didJustFinish || status.error) && !resolved) {
-                resolved = true;
-                sound.unloadAsync();
-                resolve();
-              }
-            });
-            setTimeout(() => {
-              if (!resolved) { resolved = true; resolve(); }
-            }, 10000);
-          }).catch(() => resolve());
-        });
-      }
-    } catch (e) {
-    } finally {
-      setIsSpeaking(false);
-    }
-  }, []);
-
   const detectTopics = useCallback((text, role) => {
     const t = text.toLowerCase();
     const updates = {};
@@ -201,32 +170,9 @@ try {
   detectTopics(response.text || "", "ai");
   setIsLoading(false);
 
-  if (response.audioChunks && response.audioChunks.length > 0) {
-    speakChunks(response.audioChunks);
-  } else if (response.text) {
-    const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
-    const audioPromises = sentences.map(s => getAudio(s.trim()));
-    speakChunks([]);
-    (async () => {
-      setIsSpeaking(true);
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      for (const promise of audioPromises) {
-        const audio = await promise;
-        if (audio) {
-          await new Promise(async (resolve) => {
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: `data:audio/wav;base64,${audio}` },
-              { shouldPlay: true }
-            );
-            sound.setOnPlaybackStatusUpdate((status) => {
-              if (status.didJustFinish) { sound.unloadAsync(); resolve(); }
-            });
-          });
-        }
-      }
-      setIsSpeaking(false);
-    })();
-  }
+  getAudio(response.text).then(audio => {
+    if (audio) speakText(audio);
+  });
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
