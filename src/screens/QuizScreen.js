@@ -98,6 +98,37 @@ export default function QuizScreen({ navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
+  const speakChunks = useCallback(async (chunks) => {
+    if (!chunks || chunks.length === 0) return;
+    setIsSpeaking(true);
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      for (const chunk of chunks) {
+        await new Promise((resolve) => {
+          let resolved = false;
+          Audio.Sound.createAsync(
+            { uri: `data:audio/wav;base64,${chunk}` },
+            { shouldPlay: true }
+          ).then(({ sound }) => {
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if ((status.didJustFinish || status.error) && !resolved) {
+                resolved = true;
+                sound.unloadAsync();
+                resolve();
+              }
+            });
+            setTimeout(() => {
+              if (!resolved) { resolved = true; resolve(); }
+            }, 10000);
+          }).catch(() => resolve());
+        });
+      }
+    } catch (e) {
+    } finally {
+      setIsSpeaking(false);
+    }
+  }, []);
+
   const speakText = useCallback(async (base64Audio) => {
     if (!base64Audio) return;
     setIsSpeaking(true);
@@ -170,9 +201,11 @@ try {
   detectTopics(response.text || "", "ai");
   setIsLoading(false);
 
-  getAudio(response.text).then(audio => {
-    if (audio) speakText(audio);
-  });
+  if (response.audioChunks && response.audioChunks.length > 0) {
+    speakChunks(response.audioChunks);
+  } else if (response.audio) {
+    speakText(response.audio);
+  }
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {

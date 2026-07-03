@@ -17,7 +17,7 @@ export async function getTeacherResponse(messages, lessonContent, studentName, s
   });
   const data = await response.json();
   if (data.error) throw new Error(data.error);
-  return { text: data.text || "", audio: data.audio || null };
+  return { text: data.text || "", audio: data.audio || null, audioChunks: data.audioChunks || [] };
 }
 
 export async function getAudio(text) {
