@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import { getTeacherResponse, getAudio, getGreeting } from "../services/ai";
+import { getTeacherResponse, getAudio } from "../services/ai";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 
@@ -83,7 +83,6 @@ export default function QuizScreen({ navigation }) {
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
   const messagesRef = useRef([]);
-  const greetingAudioRef = useRef(null); // Синхронно следене на съобщенията
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -174,11 +173,7 @@ export default function QuizScreen({ navigation }) {
     let messagesToSend = [];
 
     if (isFirst) {
-      messagesToSend = [{ role: "user", content: "Задай първия си въпрос по урока. Без поздрав - само въпроса." }];
-      if (greetingAudioRef.current) {
-        speakText(greetingAudioRef.current);
-        greetingAudioRef.current = null;
-      }
+      messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
@@ -222,25 +217,6 @@ try {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      // Fetch greeting audio immediately, then first question in parallel
-      const greetings = studentGender === "female"
-        ? [
-            `Здравей, скъпа ${studentName}! Радвам се, че си тук.`,
-            `Привет, ${studentName}! Готова ли си да учим заедно?`,
-            `Здравей, ${studentName}! Нека започваме.`,
-          ]
-        : [
-            `Здравей, скъпи ${studentName}! Радвам се, че си тук.`,
-            `Привет, ${studentName}! Готов ли си да учим заедно?`,
-            `Здравей, ${studentName}! Нека започваме.`,
-          ];
-      const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
-      setDisplayMessages([{ role: "ai", text: randomGreeting }]);
-      // Пусни аудио на поздрава веднага щом е готово — не чакай първия въпрос
-      getAudio(randomGreeting).then(audio => {
-        if (audio) speakText(audio);
-      });
-      // Паралелно зареди първия въпрос
       sendToAI("", true);
     }
   }, [sendToAI]);
@@ -494,5 +470,6 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
 
 
