@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import { getTeacherResponse, getAudio } from "../services/ai";
+import { getTeacherResponse, getAudio, getGreeting } from "../services/ai";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 
@@ -173,7 +173,7 @@ export default function QuizScreen({ navigation }) {
     let messagesToSend = [];
 
     if (isFirst) {
-      messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
+      messagesToSend = [{ role: "user", content: "Задай първия си въпрос по урока. Без поздрав." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
@@ -238,7 +238,11 @@ try {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      sendToAI("", true);
+      getGreeting(studentName, studentGender).then(greeting => {
+        if (greeting.text) setDisplayMessages([{ role: "ai", text: greeting.text }]);
+        if (greeting.audio) speakText(greeting.audio);
+        sendToAI("", true);
+      });
     }
   }, [sendToAI]);
 
@@ -491,3 +495,4 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
