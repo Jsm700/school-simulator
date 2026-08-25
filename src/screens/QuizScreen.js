@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import { getTeacherResponse, getAudio, getGreeting } from "../services/ai";
+import { getTeacherResponse, getAudio } from "../services/ai";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 
@@ -82,9 +82,7 @@ export default function QuizScreen({ navigation }) {
   const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
-  const messagesRef = useRef([]);
-  const greetingTextRef = useRef("");
-  const greetingAudioRef = useRef(null); // Синхронно следене на съобщенията
+  const messagesRef = useRef([]); // Синхронно следене на съобщенията
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -175,7 +173,7 @@ export default function QuizScreen({ navigation }) {
     let messagesToSend = [];
 
     if (isFirst) {
-      messagesToSend = [{ role: "user", content: "Задай първия си въпрос по урока. Без поздрав." }];
+      messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
@@ -203,21 +201,32 @@ try {
   detectTopics(response.text || "", "ai");
   setIsLoading(false);
 
-  (async () => {
-    // First play greeting if available, then question
-    if (greetingAudioRef.current) {
-      const greetingResult = await greetingAudioRef.current;
-      greetingAudioRef.current = null;
-      if (greetingResult && greetingResult.audio) {
-        await speakText(greetingResult.audio);
+  if (response.audioChunks && response.audioChunks.length > 0) {
+    speakChunks(response.audioChunks);
+  } else if (response.text) {
+    const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
+    const audioPromises = sentences.map(s => getAudio(s.trim()));
+    speakChunks([]);
+    (async () => {
+      setIsSpeaking(true);
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      for (const promise of audioPromises) {
+        const audio = await promise;
+        if (audio) {
+          await new Promise(async (resolve) => {
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: `data:audio/wav;base64,${audio}` },
+              { shouldPlay: true }
+            );
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if (status.didJustFinish) { sound.unloadAsync(); resolve(); }
+            });
+          });
+        }
       }
-    }
-    if (response.audio) {
-      speakText(response.audio);
-    } else if (response.audioChunks && response.audioChunks.length > 0) {
-      speakChunks(response.audioChunks);
-    }
-  })();
+      setIsSpeaking(false);
+    })();
+  }
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
@@ -229,18 +238,6 @@ try {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      // Show greeting immediately from local text, get audio in background
-      const greetings = studentGender === "female"
-        ? ["Здравей, скъпа " + studentName + "! Радвам се, че си тук.", "Привет, " + studentName + "! Готова ли си да учим заедно?"]
-        : ["Здравей, скъпи " + studentName + "! Радвам се, че си тук.", "Привет, " + studentName + "! Готов ли си да учим заедно?"];
-      const greetingText = greetings[Math.floor(Math.random() * greetings.length)];
-      greetingTextRef.current = greetingText;
-      setDisplayMessages([{ role: "ai", text: greetingText }]);
-      // Get greeting audio in background, store in ref
-      getGreeting(studentName, studentGender).then(greeting => {
-        if (greeting.audio) greetingAudioRef.current = greeting.audio;
-      });
-      // Start first question in parallel
       sendToAI("", true);
     }
   }, [sendToAI]);
@@ -494,8 +491,3 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
-
-
-
-
-
