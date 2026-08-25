@@ -82,7 +82,8 @@ export default function QuizScreen({ navigation }) {
   const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
-  const messagesRef = useRef([]); // Синхронно следене на съобщенията
+  const messagesRef = useRef([]);
+  const greetingTextRef = useRef(""); // Синхронно следене на съобщенията
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -238,15 +239,18 @@ try {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      // Greeting and first question run in parallel
+      // Show greeting immediately from local text, get audio in background
+      const greetings = studentGender === "female"
+        ? ["Здравей, скъпа " + studentName + "! Радвам се, че си тук.", "Привет, " + studentName + "! Готова ли си да учим заедно?"]
+        : ["Здравей, скъпи " + studentName + "! Радвам се, че си тук.", "Привет, " + studentName + "! Готов ли си да учим заедно?"];
+      const greetingText = greetings[Math.floor(Math.random() * greetings.length)];
+      greetingTextRef.current = greetingText;
+      setDisplayMessages([{ role: "ai", text: greetingText }]);
+      // Get audio for greeting in background
       getGreeting(studentName, studentGender).then(greeting => {
-        if (greeting.text) {
-          setDisplayMessages(d => d.length === 0 ? [{ role: "ai", text: greeting.text }] : d);
-        }
-        if (greeting.audio) {
-          speakText(greeting.audio);
-        }
+        if (greeting.audio) speakText(greeting.audio);
       });
+      // Start first question in parallel
       sendToAI("", true);
     }
   }, [sendToAI]);
@@ -500,5 +504,6 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
 
 
