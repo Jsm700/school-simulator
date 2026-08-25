@@ -83,7 +83,8 @@ export default function QuizScreen({ navigation }) {
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
   const messagesRef = useRef([]);
-  const greetingTextRef = useRef(""); // Синхронно следене на съобщенията
+  const greetingTextRef = useRef("");
+  const greetingAudioRef = useRef(null); // Синхронно следене на съобщенията
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -202,6 +203,11 @@ try {
   detectTopics(response.text || "", "ai");
   setIsLoading(false);
 
+  if (greetingAudioRef.current) {
+    const ga = greetingAudioRef.current;
+    greetingAudioRef.current = null;
+    speakText(ga);
+  }
   if (response.audioChunks && response.audioChunks.length > 0) {
     speakChunks(response.audioChunks);
   } else if (response.text) {
@@ -246,9 +252,9 @@ try {
       const greetingText = greetings[Math.floor(Math.random() * greetings.length)];
       greetingTextRef.current = greetingText;
       setDisplayMessages([{ role: "ai", text: greetingText }]);
-      // Get audio for greeting in background
+      // Get greeting audio in background, store in ref
       getGreeting(studentName, studentGender).then(greeting => {
-        if (greeting.audio) speakText(greeting.audio);
+        if (greeting.audio) greetingAudioRef.current = greeting.audio;
       });
       // Start first question in parallel
       sendToAI("", true);
@@ -504,6 +510,7 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
 
 
 
