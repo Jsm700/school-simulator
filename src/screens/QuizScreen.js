@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import { getTeacherResponse, getAudio, getGreeting } from "../services/ai";
+import { getTeacherResponse, getAudio } from "../services/ai";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 
@@ -82,7 +82,7 @@ export default function QuizScreen({ navigation }) {
   const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
-  const messagesRef = useRef([]);
+  const messagesRef = useRef([]); // Синхронно следене на съобщенията
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -96,6 +96,26 @@ export default function QuizScreen({ navigation }) {
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }, []);
+
+  const speakText = useCallback(async (base64Audio) => {
+    if (!base64Audio) return;
+    setIsSpeaking(true);
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: `data:audio/wav;base64,${base64Audio}` },
+        { shouldPlay: true }
+      );
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          setIsSpeaking(false);
+          sound.unloadAsync();
+        }
+      });
+    } catch (e) {
+      setIsSpeaking(false);
+    }
   }, []);
 
   const speakChunks = useCallback(async (chunks) => {
@@ -129,26 +149,6 @@ export default function QuizScreen({ navigation }) {
     }
   }, []);
 
-  const speakText = useCallback(async (base64Audio) => {
-    if (!base64Audio) return;
-    setIsSpeaking(true);
-    try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: `data:audio/wav;base64,${base64Audio}` },
-        { shouldPlay: true }
-      );
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
-          setIsSpeaking(false);
-          sound.unloadAsync();
-        }
-      });
-    } catch (e) {
-      setIsSpeaking(false);
-    }
-  }, []);
-
   const detectTopics = useCallback((text, role) => {
     const t = text.toLowerCase();
     const updates = {};
@@ -173,7 +173,7 @@ export default function QuizScreen({ navigation }) {
     let messagesToSend = [];
 
     if (isFirst) {
-      messagesToSend = [{ role: "user", content: "Задай първия си въпрос по урока. Без поздрав." }];
+      messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
@@ -203,8 +203,29 @@ try {
 
   if (response.audioChunks && response.audioChunks.length > 0) {
     speakChunks(response.audioChunks);
-  } else if (response.audio) {
-    speakText(response.audio);
+  } else if (response.text) {
+    const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
+    const audioPromises = sentences.map(s => getAudio(s.trim()));
+    speakChunks([]);
+    (async () => {
+      setIsSpeaking(true);
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      for (const promise of audioPromises) {
+        const audio = await promise;
+        if (audio) {
+          await new Promise(async (resolve) => {
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: `data:audio/wav;base64,${audio}` },
+              { shouldPlay: true }
+            );
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if (status.didJustFinish) { sound.unloadAsync(); resolve(); }
+            });
+          });
+        }
+      }
+      setIsSpeaking(false);
+    })();
   }
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
@@ -217,15 +238,6 @@ try {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      // Покажи greeting веднага и зареди първия въпрос паралелно
-      getGreeting(studentName, studentGender).then(greeting => {
-        if (greeting.text) {
-          setDisplayMessages([{ role: "ai", text: greeting.text }]);
-        }
-        if (greeting.audio) {
-          speakText(greeting.audio);
-        }
-      });
       sendToAI("", true);
     }
   }, [sendToAI]);
@@ -479,7 +491,3 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
-
-
-
-
