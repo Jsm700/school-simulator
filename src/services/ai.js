@@ -21,11 +21,21 @@ export async function getTeacherResponse(messages, lessonContent, studentName, s
 }
 
 export async function getAudio(text) {
-  const response = await fetch("https://frosty-dawn-e989.yassen-mladenov.workers.dev", {
+  const response = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "tts", text }),
   });
   const data = await response.json();
   return data.audio || null;
+}
+
+export async function getGreeting(studentName, studentGender) {
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "greeting", studentName, studentGender }),
+  });
+  const data = await response.json();
+  return { text: data.text || "", audio: data.audio || null };
 }
