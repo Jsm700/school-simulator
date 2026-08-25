@@ -238,16 +238,16 @@ try {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
+      // Greeting and first question run in parallel
       getGreeting(studentName, studentGender).then(greeting => {
         if (greeting.text) {
-          setDisplayMessages([{ role: "ai", text: greeting.text }]);
+          setDisplayMessages(d => d.length === 0 ? [{ role: "ai", text: greeting.text }] : d);
         }
         if (greeting.audio) {
           speakText(greeting.audio);
         }
-        // Start first question AFTER greeting is set
-        sendToAI("", true);
       });
+      sendToAI("", true);
     }
   }, [sendToAI]);
 
@@ -500,4 +500,5 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
 
