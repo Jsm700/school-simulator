@@ -203,37 +203,21 @@ try {
   detectTopics(response.text || "", "ai");
   setIsLoading(false);
 
-  if (greetingAudioRef.current) {
-    const ga = greetingAudioRef.current;
-    greetingAudioRef.current = null;
-    speakText(ga);
-  }
-  if (response.audioChunks && response.audioChunks.length > 0) {
-    speakChunks(response.audioChunks);
-  } else if (response.text) {
-    const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
-    const audioPromises = sentences.map(s => getAudio(s.trim()));
-    speakChunks([]);
-    (async () => {
-      setIsSpeaking(true);
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      for (const promise of audioPromises) {
-        const audio = await promise;
-        if (audio) {
-          await new Promise(async (resolve) => {
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: `data:audio/wav;base64,${audio}` },
-              { shouldPlay: true }
-            );
-            sound.setOnPlaybackStatusUpdate((status) => {
-              if (status.didJustFinish) { sound.unloadAsync(); resolve(); }
-            });
-          });
-        }
+  (async () => {
+    // First play greeting if available, then question
+    if (greetingAudioRef.current) {
+      const greetingResult = await greetingAudioRef.current;
+      greetingAudioRef.current = null;
+      if (greetingResult && greetingResult.audio) {
+        await speakText(greetingResult.audio);
       }
-      setIsSpeaking(false);
-    })();
-  }
+    }
+    if (response.audio) {
+      speakText(response.audio);
+    } else if (response.audioChunks && response.audioChunks.length > 0) {
+      speakChunks(response.audioChunks);
+    }
+  })();
 } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
@@ -510,6 +494,7 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
 
 
 
