@@ -236,12 +236,12 @@ try {
           ];
       const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
       setDisplayMessages([{ role: "ai", text: randomGreeting }]);
-      Promise.all([
-        getAudio(randomGreeting),
-        sendToAI("", true),
-      ]).then(([audio]) => {
+      // Пусни аудио на поздрава веднага щом е готово — не чакай първия въпрос
+      getAudio(randomGreeting).then(audio => {
         if (audio) speakText(audio);
       });
+      // Паралелно зареди първия въпрос
+      sendToAI("", true);
     }
   }, [sendToAI]);
 
@@ -494,4 +494,5 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
 });
+
 
