@@ -151,7 +151,7 @@ export default function QuizScreen({ navigation }) {
       // Хардкоднат поздрав: тръгва веднага, паралелно с реалната заявка към AI.
       greetingText = `Здравей, скъп${studentGender === "female" ? "а" : ""} ${studentName}!`;
       greetingAudioPromise = getAudio(greetingText);
-      messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
+      messagesToSend = [{ role: "user", content: "Не ме поздравявай — поздравът вече е изговорен отделно. Задай директно първия си въпрос по днешния урок, без встъпителни думи." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
