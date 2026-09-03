@@ -98,55 +98,28 @@ export default function QuizScreen({ navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
-  const speakText = useCallback(async (base64Audio) => {
+  // Изговаря един base64 WAV клип и чака да свърши (с 10 сек safety timeout).
+  // isSpeaking се управлява отвън от sendToAI, за да покрива цялата поредица клипове.
+  const speakBase64 = useCallback(async (base64Audio) => {
     if (!base64Audio) return;
-    setIsSpeaking(true);
-    try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync(
+    await new Promise((resolve) => {
+      let resolved = false;
+      Audio.Sound.createAsync(
         { uri: `data:audio/wav;base64,${base64Audio}` },
         { shouldPlay: true }
-      );
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
-          setIsSpeaking(false);
-          sound.unloadAsync();
-        }
-      });
-    } catch (e) {
-      setIsSpeaking(false);
-    }
-  }, []);
-
-  const speakChunks = useCallback(async (chunks) => {
-    if (!chunks || chunks.length === 0) return;
-    setIsSpeaking(true);
-    try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      for (const chunk of chunks) {
-        await new Promise((resolve) => {
-          let resolved = false;
-          Audio.Sound.createAsync(
-            { uri: `data:audio/wav;base64,${chunk}` },
-            { shouldPlay: true }
-          ).then(({ sound }) => {
-            sound.setOnPlaybackStatusUpdate((status) => {
-              if ((status.didJustFinish || status.error) && !resolved) {
-                resolved = true;
-                sound.unloadAsync();
-                resolve();
-              }
-            });
-            setTimeout(() => {
-              if (!resolved) { resolved = true; resolve(); }
-            }, 10000);
-          }).catch(() => resolve());
+      ).then(({ sound }) => {
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if ((status.didJustFinish || status.error) && !resolved) {
+            resolved = true;
+            sound.unloadAsync();
+            resolve();
+          }
         });
-      }
-    } catch (e) {
-    } finally {
-      setIsSpeaking(false);
-    }
+        setTimeout(() => {
+          if (!resolved) { resolved = true; resolve(); }
+        }, 10000);
+      }).catch(() => resolve());
+    });
   }, []);
 
   const detectTopics = useCallback((text, role) => {
@@ -171,8 +144,13 @@ export default function QuizScreen({ navigation }) {
     scrollToBottom();
 
     let messagesToSend = [];
+    let greetingText = "";
+    let greetingAudioPromise = null;
 
     if (isFirst) {
+      // Хардкоднат поздрав: тръгва веднага, паралелно с реалната заявка към AI.
+      greetingText = `Здравей, скъп${studentGender === "female" ? "а" : ""} ${studentName}!`;
+      greetingAudioPromise = getAudio(greetingText);
       messagesToSend = [{ role: "user", content: "Поздрави ме топло и задай първия си въпрос по урока." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
@@ -182,58 +160,54 @@ export default function QuizScreen({ navigation }) {
 
     messagesRef.current = messagesToSend;
     setMessages(messagesToSend);
-    
-try {
- const response = await getTeacherResponse(
-    messagesToSend,
-    lesson.content || "",
-    studentName,
-    studentGender,
-    studentGrade,
-    lesson.kvKey || ""
-  );
 
-  const withReply = [...messagesToSend, { role: "assistant", content: response.text }];
+    try {
+      const response = await getTeacherResponse(
+        messagesToSend,
+        lesson.content || "",
+        studentName,
+        studentGender,
+        studentGrade,
+        lesson.kvKey || ""
+      );
 
-  messagesRef.current = withReply;
-  setMessages(withReply);
-  setDisplayMessages(d => [...d, { role: "ai", text: response.text }]);
-  detectTopics(response.text || "", "ai");
-  setIsLoading(false);
+      const finalText = isFirst ? `${greetingText} ${response.text}` : response.text;
+      const withReply = [...messagesToSend, { role: "assistant", content: response.text }];
 
-  if (response.audioChunks && response.audioChunks.length > 0) {
-    speakChunks(response.audioChunks);
-  } else if (response.text) {
-    const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
-    const audioPromises = sentences.map(s => getAudio(s.trim()));
-    speakChunks([]);
-    (async () => {
+      messagesRef.current = withReply;
+      setMessages(withReply);
+      setDisplayMessages(d => [...d, { role: "ai", text: finalText }]);
+      detectTopics(response.text || "", "ai");
+      setIsLoading(false);
+
       setIsSpeaking(true);
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      for (const promise of audioPromises) {
-        const audio = await promise;
-        if (audio) {
-          await new Promise(async (resolve) => {
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: `data:audio/wav;base64,${audio}` },
-              { shouldPlay: true }
-            );
-            sound.setOnPlaybackStatusUpdate((status) => {
-              if (status.didJustFinish) { sound.unloadAsync(); resolve(); }
-            });
-          });
+
+      if (isFirst) {
+        // Изчакваме и изговаряме поздрава ПЪРВИ, преди въпроса — това е това, което се чупеше преди.
+        const greetingAudio = await greetingAudioPromise;
+        await speakBase64(greetingAudio);
+      }
+
+      if (response.audioChunks && response.audioChunks.length > 0) {
+        for (const chunk of response.audioChunks) {
+          await speakBase64(chunk);
+        }
+      } else if (response.text) {
+        const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
+        for (const s of sentences) {
+          const audio = await getAudio(s.trim());
+          await speakBase64(audio);
         }
       }
       setIsSpeaking(false);
-    })();
-  }
-} catch (error) {
+    } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
       setIsLoading(false);
       setTimeout(() => scrollToBottom(), 100);
     }
-  }, [lesson, detectTopics, speakText, scrollToBottom]);
+  }, [lesson, detectTopics, speakBase64, scrollToBottom, studentGender, studentName]);
 
   useEffect(() => {
     if (isFirstLoad.current) {
