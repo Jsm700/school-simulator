@@ -180,6 +180,9 @@ export default function QuizScreen({ navigation }) {
       detectTopics(response.text || "", "ai");
       setIsLoading(false);
 
+      ExpoSpeechRecognitionModule.stop();
+      setIsRecording(false);
+
       setIsSpeaking(true);
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
 
@@ -223,14 +226,22 @@ export default function QuizScreen({ navigation }) {
   const handleSend = useCallback(() => {
     const text = inputText.trim();
     if (!text || isLoading) return;
+    if (isRecording) {
+      ExpoSpeechRecognitionModule.stop();
+      setIsRecording(false);
+    }
     setInputText("");
     sendToAI(text);
-  }, [inputText, isLoading, sendToAI]);
+  }, [inputText, isLoading, sendToAI, isRecording]);
 
   const handleChip = useCallback((msg) => {
     if (isLoading) return;
+    if (isRecording) {
+      ExpoSpeechRecognitionModule.stop();
+      setIsRecording(false);
+    }
     sendToAI(msg);
-  }, [isLoading, sendToAI]);
+  }, [isLoading, sendToAI, isRecording]);
 
   useSpeechRecognitionEvent("result", (event) => {
     if (event.results?.[0]?.transcript) {
@@ -251,7 +262,7 @@ export default function QuizScreen({ navigation }) {
       setIsRecording(true);
       ExpoSpeechRecognitionModule.start({
         lang: "bg-BG",
-        continuous: true,
+        continuous: false,
         interimResults: false,
         androidIntentOptions: {
           EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2500,
