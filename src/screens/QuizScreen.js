@@ -83,6 +83,7 @@ export default function QuizScreen({ navigation }) {
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
   const messagesRef = useRef([]); // Синхронно следене на съобщенията
+  const speechAccumRef = useRef(""); // Натрупан текст между отделни result събития в continuous режим
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -244,8 +245,11 @@ export default function QuizScreen({ navigation }) {
   }, [isLoading, sendToAI, isRecording]);
 
   useSpeechRecognitionEvent("result", (event) => {
-    if (event.results?.[0]?.transcript) {
-      setInputText(event.results[0].transcript);
+    const segment = event.results?.[0]?.transcript;
+    if (segment) {
+      const combined = (speechAccumRef.current + " " + segment).trim();
+      speechAccumRef.current = combined;
+      setInputText(combined);
     }
   });
   useSpeechRecognitionEvent("end", () => { setIsRecording(false); });
@@ -259,10 +263,11 @@ export default function QuizScreen({ navigation }) {
     try {
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!permission.granted) return;
+      speechAccumRef.current = "";
       setIsRecording(true);
       ExpoSpeechRecognitionModule.start({
         lang: "bg-BG",
-        continuous: false,
+        continuous: true,
         interimResults: false,
         androidIntentOptions: {
           EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2500,
