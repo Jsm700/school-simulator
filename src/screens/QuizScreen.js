@@ -185,8 +185,14 @@ export default function QuizScreen({ navigation }) {
 
       if (isFirst) {
         // Изчакваме и изговаряме поздрава ПЪРВИ, преди въпроса — това е това, което се чупеше преди.
-        const greetingAudio = await greetingAudioPromise;
-        await speakBase64(greetingAudio);
+        try {
+          const greetingAudio = await greetingAudioPromise;
+          Alert.alert("DEBUG greeting", `audio present: ${!!greetingAudio}, length: ${greetingAudio ? greetingAudio.length : 0}`);
+          await speakBase64(greetingAudio);
+          Alert.alert("DEBUG greeting", "speakBase64 завърши без грешка");
+        } catch (greetErr) {
+          Alert.alert("DEBUG greeting ERROR", String(greetErr && greetErr.message ? greetErr.message : greetErr));
+        }
       }
 
       if (response.audioChunks && response.audioChunks.length > 0) {
