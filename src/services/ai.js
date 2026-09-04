@@ -29,3 +29,25 @@ export async function getAudio(text) {
   const data = await response.json();
   return data.audio || null;
 }
+
+// ВРЕМЕННА диагностична версия — не гълта грешки, връща HTTP статус и суров body за debug.
+export async function getAudioDebug(text) {
+  try {
+    const response = await fetch("https://frosty-dawn-e989.yassen-mladenov.workers.dev", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "tts", text }),
+    });
+    const raw = await response.text();
+    let data = {};
+    try { data = JSON.parse(raw); } catch (e) {}
+    return {
+      audio: data.audio || null,
+      status: response.status,
+      error: data.error || null,
+      rawSnippet: raw.slice(0, 250),
+    };
+  } catch (e) {
+    return { audio: null, status: null, error: e.message || String(e), rawSnippet: "" };
+  }
+}
