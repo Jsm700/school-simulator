@@ -249,7 +249,16 @@ export default function QuizScreen({ navigation }) {
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!permission.granted) return;
       setIsRecording(true);
-      ExpoSpeechRecognitionModule.start({ lang: "bg-BG", continuous: false, interimResults: false });
+      ExpoSpeechRecognitionModule.start({
+        lang: "bg-BG",
+        continuous: true,
+        interimResults: false,
+        androidIntentOptions: {
+          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2500,
+          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 3500,
+          EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS: 15000,
+        },
+      });
     } catch (err) {
       setIsRecording(false);
     }
