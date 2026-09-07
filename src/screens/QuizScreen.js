@@ -146,12 +146,9 @@ export default function QuizScreen({ navigation }) {
 
     let messagesToSend = [];
     let greetingText = "";
-    let greetingAudioPromise = null;
 
     if (isFirst) {
-      // Хардкоднат поздрав: тръгва веднага, паралелно с реалната заявка към AI.
       greetingText = `Здравей, скъп${studentGender === "female" ? "а" : ""} ${studentName}!`;
-      greetingAudioPromise = getAudio(greetingText);
       messagesToSend = [{ role: "user", content: "Не ме поздравявай — поздравът вече е изговорен отделно. Задай директно първия си въпрос по днешния урок, без встъпителни думи." }];
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
@@ -188,9 +185,9 @@ export default function QuizScreen({ navigation }) {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
 
       if (isFirst) {
-        // Изчакваме и изговаряме поздрава ПЪРВИ, преди въпроса.
+        // Поздравът тръгва СЕГА, едва след като чат TTS-то вече е приключило - никакво застъпване на Gemini заявки.
         try {
-          const greetingAudio = await greetingAudioPromise;
+          const greetingAudio = await getAudio(greetingText);
           await speakBase64(greetingAudio);
         } catch (greetErr) {
           // Ако поздравът се провали, продължаваме директно с въпроса, без да чупим потока.
