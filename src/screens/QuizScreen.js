@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
   PermissionsAndroid,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -84,6 +85,12 @@ export default function QuizScreen({ navigation }) {
   const isFirstLoad = useRef(true);
   const messagesRef = useRef([]); // Синхронно следене на съобщенията
   const speechAccumRef = useRef(""); // Натрупан текст между отделни result събития в continuous режим
+
+  // Речник на урока + режим "непозната дума"
+  const [vocabWords, setVocabWords] = useState(null); // null = още не е зареден
+  const [vocabModalVisible, setVocabModalVisible] = useState(false);
+  const [vocabLoading, setVocabLoading] = useState(false);
+  const [askingUnknownWord, setAskingUnknownWord] = useState(false);
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -229,8 +236,13 @@ export default function QuizScreen({ navigation }) {
       setIsRecording(false);
     }
     setInputText("");
-    sendToAI(text);
-  }, [inputText, isLoading, sendToAI, isRecording]);
+    if (askingUnknownWord) {
+      setAskingUnknownWord(false);
+      sendToAI(`Не разбирам думата "${text}". Обясни ми я просто, с пример от ежедневието, но НЕ я брой като грешка или пропуск в изпита.`);
+    } else {
+      sendToAI(text);
+    }
+  }, [inputText, isLoading, sendToAI, isRecording, askingUnknownWord]);
 
   const handleChip = useCallback((msg) => {
     if (isLoading) return;
@@ -240,6 +252,35 @@ export default function QuizScreen({ navigation }) {
     }
     sendToAI(msg);
   }, [isLoading, sendToAI, isRecording]);
+
+  const openVocab = useCallback(async () => {
+    if (vocabWords === null) {
+      setVocabLoading(true);
+      try {
+        const res = await fetch("https://frosty-dawn-e989.yassen-mladenov.workers.dev", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "get_vocabulary", lessonKey: lesson.kvKey || "" }),
+        });
+        const data = await res.json();
+        setVocabWords(data.vocabulary || {});
+      } catch (e) {
+        setVocabWords({});
+      } finally {
+        setVocabLoading(false);
+      }
+    }
+    setVocabModalVisible(true);
+  }, [vocabWords, lesson.kvKey]);
+
+  const handleVocabWordPress = useCallback((word) => {
+    setVocabModalVisible(false);
+    handleChip(`Обясни ми думата "${word}" и после продължи изпитването.`);
+  }, [handleChip]);
+
+  const toggleUnknownWordMode = useCallback(() => {
+    setAskingUnknownWord(prev => !prev);
+  }, []);
 
   useSpeechRecognitionEvent("result", (event) => {
     const segment = event.results?.[0]?.transcript;
@@ -337,6 +378,20 @@ export default function QuizScreen({ navigation }) {
             style={styles.chipsRow}
             contentContainerStyle={{ gap: 6, paddingHorizontal: spacing.lg }}
           >
+            <TouchableOpacity
+              style={styles.chip}
+              onPress={openVocab}
+              disabled={isLoading}
+            >
+              <Text style={styles.chipText}>📖 Речник на урока</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.chip, askingUnknownWord && styles.chipActive]}
+              onPress={toggleUnknownWordMode}
+              disabled={isLoading}
+            >
+              <Text style={styles.chipText}>❓ Непозната дума</Text>
+            </TouchableOpacity>
             {hintChips.map(c => (
               <TouchableOpacity
                 key={c.label}
@@ -351,10 +406,10 @@ export default function QuizScreen({ navigation }) {
 
           <View style={styles.inputRow}>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, askingUnknownWord && styles.textInputActive]}
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Напиши отговора си..."
+              placeholder={askingUnknownWord ? "Коя дума не разбираш?" : "Напиши отговора си..."}
               placeholderTextColor={colors.muted}
               multiline
               maxLength={500}
@@ -380,6 +435,40 @@ export default function QuizScreen({ navigation }) {
           </Text>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={vocabModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setVocabModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>📖 Речник на урока</Text>
+            {vocabLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.lg }} />
+            ) : vocabWords && Object.keys(vocabWords).length > 0 ? (
+              <ScrollView style={{ maxHeight: 320 }}>
+                {Object.keys(vocabWords).map(word => (
+                  <TouchableOpacity
+                    key={word}
+                    style={styles.vocabWordRow}
+                    onPress={() => handleVocabWordPress(word)}
+                  >
+                    <Text style={styles.vocabWordText}>{word}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={styles.modalEmptyText}>Няма речник за този урок.</Text>
+            )}
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setVocabModalVisible(false)}>
+              <Text style={styles.modalCloseBtnText}>Затвори</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -490,4 +579,37 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
+  chipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  textInputActive: { borderColor: colors.primary },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.xl,
+    maxHeight: "70%",
+  },
+  modalTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: spacing.md },
+  vocabWordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.border,
+  },
+  vocabWordText: { fontSize: 15, color: colors.text, fontWeight: "600" },
+  modalEmptyText: { fontSize: 14, color: colors.muted, paddingVertical: spacing.lg },
+  modalCloseBtn: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: "center",
+  },
+  modalCloseBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 });
