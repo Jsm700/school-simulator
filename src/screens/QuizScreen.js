@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import { getTeacherResponse, getAudio } from "../services/ai";
+import { consumeGreetingPrefetch } from "../services/prefetch";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 
@@ -147,7 +148,7 @@ export default function QuizScreen({ navigation }) {
     if (pts > 0) setScore(prev => prev + pts);
   }, []);
 
-  const sendToAI = useCallback(async (userMsg, isFirst = false) => {
+  const sendToAI = useCallback(async (userMsg, isFirst = false, prefetchedPromise = null) => {
     setIsLoading(true);
     scrollToBottom();
 
@@ -167,14 +168,16 @@ export default function QuizScreen({ navigation }) {
     setMessages(messagesToSend);
 
     try {
-      const response = await getTeacherResponse(
-        messagesToSend,
-        lesson.content || "",
-        studentName,
-        studentGender,
-        studentGrade,
-        lesson.kvKey || ""
-      );
+      const response = prefetchedPromise
+        ? await prefetchedPromise
+        : await getTeacherResponse(
+            messagesToSend,
+            lesson.content || "",
+            studentName,
+            studentGender,
+            studentGrade,
+            lesson.kvKey || ""
+          );
 
       const finalText = isFirst ? `${greetingText} ${response.text}` : response.text;
       const withReply = [...messagesToSend, { role: "assistant", content: response.text }];
@@ -224,7 +227,9 @@ export default function QuizScreen({ navigation }) {
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
-      sendToAI("", true);
+      const signature = `${lesson.id}_${studentName}_${studentGender}_${studentGrade}`;
+      const prefetched = consumeGreetingPrefetch(signature);
+      sendToAI("", true, prefetched);
     }
   }, [sendToAI]);
 
