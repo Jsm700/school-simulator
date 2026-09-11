@@ -106,7 +106,7 @@ export default function QuizScreen({ navigation }) {
     await new Promise((resolve) => {
       let resolved = false;
       Audio.Sound.createAsync(
-        { uri: `data:audio/wav;base64,${base64Audio}` },
+        { uri: `data:audio/mp3;base64,${base64Audio}` },
         { shouldPlay: true }
       ).then(({ sound }) => {
         sound.setOnPlaybackStatusUpdate((status) => {
