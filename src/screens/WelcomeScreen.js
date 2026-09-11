@@ -11,6 +11,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getTeacherResponse } from "../services/ai";
+import { startGreetingPrefetch } from "../services/prefetch";
 import { Ionicons } from "@expo/vector-icons";
 import {
   CLASS_OPTIONS,
@@ -134,9 +136,26 @@ export default function WelcomeScreen({ navigation }) {
 
   const handleStart = () => {
     if (!selectedLesson) return;
+    const finalName = studentName || "Тони";
+    const signature = `${selectedLesson.id}_${finalName}_${studentGender}_${classVal}`;
+    const firstMessages = [{
+      role: "user",
+      content: "Не ме поздравявай — поздравът вече е изговорен отделно. Задай директно първия си въпрос по днешния урок, без встъпителни думи.",
+    }];
+    const prefetchPromise = getTeacherResponse(
+      firstMessages,
+      selectedLesson.content || "",
+      finalName,
+      studentGender,
+      classVal,
+      selectedLesson.kvKey || ""
+    );
+    prefetchPromise.catch(() => {}); // избягва "Unhandled promise rejection", ако Quiz екранът не го вземе навреме
+    startGreetingPrefetch(signature, prefetchPromise);
+
     navigation.navigate("Quiz", {
       lesson: selectedLesson,
-      studentName: studentName || "Тони",
+      studentName: finalName,
       studentGender: studentGender,
       studentGrade: classVal,
     });
