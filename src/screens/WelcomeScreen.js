@@ -10,6 +10,7 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import {
   CLASS_OPTIONS,
@@ -19,6 +20,8 @@ import {
 } from "../data/lessons";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
+const STORAGE_KEY_NAME = "student_name";
+const STORAGE_KEY_GENDER = "student_gender";
 
 async function fetchIndex() {
   const res = await fetch(WORKER_URL, {
@@ -106,7 +109,28 @@ export default function WelcomeScreen({ navigation }) {
   const [studentName, setStudentName] = useState("");
   const [studentGender, setStudentGender] = useState("male");
 
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const savedName = await AsyncStorage.getItem(STORAGE_KEY_NAME);
+        const savedGender = await AsyncStorage.getItem(STORAGE_KEY_GENDER);
+        if (savedName) setStudentName(savedName);
+        if (savedGender) setStudentGender(savedGender);
+      } catch (e) {
+        console.error("AsyncStorage load error:", e);
+      }
+    })();
+  }, []);
 
+  const updateStudentName = (name) => {
+    setStudentName(name);
+    AsyncStorage.setItem(STORAGE_KEY_NAME, name).catch(() => {});
+  };
+
+  const updateStudentGender = (gender) => {
+    setStudentGender(gender);
+    AsyncStorage.setItem(STORAGE_KEY_GENDER, gender).catch(() => {});
+  };
 
   const handleStart = () => {
     if (!selectedLesson) return;
@@ -146,7 +170,7 @@ export default function WelcomeScreen({ navigation }) {
           <TextInput
             style={styles.nameInput}
             value={studentName}
-            onChangeText={setStudentName}
+            onChangeText={updateStudentName}
             placeholder="Напр. Иван или Мария"
             placeholderTextColor={colors.muted}
             maxLength={30}
@@ -158,7 +182,7 @@ returnKeyType="done"
           <View style={styles.genderRow}>
             <TouchableOpacity
               style={[styles.genderBtn, studentGender === "male" && styles.genderBtnActive]}
-              onPress={() => setStudentGender("male")}
+              onPress={() => updateStudentGender("male")}
             >
               <Text style={[styles.genderText, studentGender === "male" && styles.genderTextActive]}>
                 👦 Момче
@@ -166,7 +190,7 @@ returnKeyType="done"
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.genderBtn, studentGender === "female" && styles.genderBtnActive]}
-              onPress={() => setStudentGender("female")}
+              onPress={() => updateStudentGender("female")}
             >
               <Text style={[styles.genderText, studentGender === "female" && styles.genderTextActive]}>
                 👧 Момиче
