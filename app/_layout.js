@@ -7,6 +7,12 @@ export default function Layout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen
+          name="revive"
+          options={{
+            animation: "slide_from_right",
+          }}
+        />
+        <Stack.Screen
           name="quiz"
           options={{
             animation: "slide_from_right",
