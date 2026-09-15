@@ -19,7 +19,8 @@ export default function LessonReviveScreen({ route, navigation }) {
   const [scenes, setScenes] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sceneIndex, setSceneIndex] = useState(0);
-  const [selectedChoice, setSelectedChoice] = useState(null);
+  // Помни избора на детето за ВСЯКА сцена по индекс, за да може да се връща назад/напред без да губи прогреса
+  const [sceneChoices, setSceneChoices] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -46,14 +47,23 @@ export default function LessonReviveScreen({ route, navigation }) {
     };
   }, [lesson.kvKey]);
 
+  const selectedChoice = sceneChoices[sceneIndex] || null;
+
   const handleChoice = useCallback((choice) => {
-    setSelectedChoice(choice);
-  }, []);
+    setSceneChoices((prev) => ({ ...prev, [sceneIndex]: choice }));
+  }, [sceneIndex]);
 
   const handleNext = useCallback(() => {
-    setSelectedChoice(null);
     setSceneIndex((i) => i + 1);
   }, []);
+
+  const handlePrevScene = useCallback(() => {
+    if (sceneIndex > 0) {
+      setSceneIndex((i) => i - 1);
+    } else {
+      navigation.goBack();
+    }
+  }, [sceneIndex, navigation]);
 
   const handleGoToExam = useCallback(() => {
     navigation.replace("Quiz", { lesson, studentName, studentGender, studentGrade });
@@ -84,8 +94,8 @@ export default function LessonReviveScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backBtn}>‹ Назад</Text>
+        <TouchableOpacity onPress={handlePrevScene}>
+          <Text style={styles.backBtn}>‹ {sceneIndex > 0 ? "Предишна сцена" : "Назад"}</Text>
         </TouchableOpacity>
         <Text style={styles.progress}>{sceneIndex + 1} / {scenes.length}</Text>
       </View>
@@ -94,16 +104,20 @@ export default function LessonReviveScreen({ route, navigation }) {
         <Text style={styles.title}>{lesson.title}</Text>
         <Text style={styles.sceneText}>{scene.text}</Text>
 
-        {!selectedChoice &&
-          (scene.choices || []).map((choice, idx) => (
+        {(scene.choices || []).map((choice, idx) => {
+          const isSelected = selectedChoice && selectedChoice.label === choice.label;
+          return (
             <TouchableOpacity
               key={idx}
-              style={styles.choiceBtn}
+              style={[styles.choiceBtn, isSelected && styles.choiceBtnSelected]}
               onPress={() => handleChoice(choice)}
             >
-              <Text style={styles.choiceBtnText}>{choice.label}</Text>
+              <Text style={[styles.choiceBtnText, isSelected && styles.choiceBtnTextSelected]}>
+                {choice.label}
+              </Text>
             </TouchableOpacity>
-          ))}
+          );
+        })}
 
         {selectedChoice && (
           <View style={styles.feedbackBox}>
@@ -158,6 +172,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   choiceBtnText: { fontSize: 15, color: colors.text },
+  choiceBtnSelected: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  choiceBtnTextSelected: { color: colors.primaryDark, fontWeight: "600" },
   feedbackBox: {
     backgroundColor: colors.primaryLight,
     borderRadius: radius.md,
