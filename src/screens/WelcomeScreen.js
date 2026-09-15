@@ -134,7 +134,7 @@ export default function WelcomeScreen({ navigation }) {
     AsyncStorage.setItem(STORAGE_KEY_GENDER, gender).catch(() => {});
   };
 
-  const handleStart = () => {
+  const handleStartExam = () => {
     if (!selectedLesson) return;
     const finalName = studentName || "Тони";
     const signature = `${selectedLesson.id}_${finalName}_${studentGender}_${classVal}`;
@@ -154,6 +154,18 @@ export default function WelcomeScreen({ navigation }) {
     startGreetingPrefetch(signature, prefetchPromise);
 
     navigation.navigate("Quiz", {
+      lesson: selectedLesson,
+      studentName: finalName,
+      studentGender: studentGender,
+      studentGrade: classVal,
+    });
+  };
+
+  const handleStartRevive = () => {
+    if (!selectedLesson) return;
+    const finalName = studentName || "Тони";
+    // Без prefetch тук — детето ще прекара време в сцените, prefetch-нат отговор би остарял безсмислено.
+    navigation.navigate("Revive", {
       lesson: selectedLesson,
       studentName: finalName,
       studentGender: studentGender,
@@ -277,16 +289,36 @@ returnKeyType="done"
           </View>
         )}
 
-        {/* Start Button */}
-        <TouchableOpacity
-          style={[styles.startBtn, !selectedLesson && styles.startBtnDisabled]}
-          onPress={handleStart}
-          disabled={!selectedLesson}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.startBtnText}>Започни изпитването</Text>
-          <Ionicons name="arrow-forward" size={20} color="#fff" />
-        </TouchableOpacity>
+        {/* Start Button(s) */}
+        {selectedLesson && selectedLesson.hasRevive ? (
+          <View style={{ gap: 10 }}>
+            <TouchableOpacity
+              style={styles.startBtn}
+              onPress={handleStartRevive}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.startBtnText}>📖 Оживи урока</Text>
+              <Ionicons name="arrow-forward" size={20} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={handleStartExam}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryBtnText}>Направо на изпит</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.startBtn, !selectedLesson && styles.startBtnDisabled]}
+            onPress={handleStartExam}
+            disabled={!selectedLesson}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.startBtnText}>Започни изпитването</Text>
+            <Ionicons name="arrow-forward" size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -430,5 +462,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   startBtnDisabled: { backgroundColor: "#B5D4F4" },
+  secondaryBtn: {
+    borderWidth: 1.5, borderColor: colors.primary,
+    borderRadius: radius.md, padding: spacing.md,
+    alignItems: "center",
+  },
+  secondaryBtnText: { color: colors.primary, fontSize: 15, fontWeight: "700" },
   startBtnText: { color: "#fff", fontSize: 17, fontWeight: "800" },
 });
