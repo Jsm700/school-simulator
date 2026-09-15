@@ -9,6 +9,8 @@ export default function Index() {
     navigate: (screen, params) => {
       if (screen === "Quiz") {
         router.push({ pathname: "/quiz", params: { lesson: JSON.stringify(params.lesson), studentName: params.studentName, studentGender: params.studentGender, studentGrade: params.studentGrade } });
+      } else if (screen === "Revive") {
+        router.push({ pathname: "/revive", params: { lesson: JSON.stringify(params.lesson), studentName: params.studentName, studentGender: params.studentGender, studentGrade: params.studentGrade } });
       }
     },
   };
