@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import QuizScreen from "../src/screens/QuizScreen";
 
 export default function Quiz() {
-  const { lesson } = useLocalSearchParams();
+  const { lesson, studentName, studentGender, studentGrade } = useLocalSearchParams();
   const router = useRouter();
 
   const navigation = {
@@ -12,5 +12,10 @@ export default function Quiz() {
 
   const parsedLesson = JSON.parse(lesson);
 
-  return <QuizScreen route={{ params: { lesson: parsedLesson } }} navigation={navigation} />;
+  return (
+    <QuizScreen
+      route={{ params: { lesson: parsedLesson, studentName, studentGender, studentGrade } }}
+      navigation={navigation}
+    />
+  );
 }
