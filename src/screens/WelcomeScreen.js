@@ -183,7 +183,7 @@ export default function WelcomeScreen({ navigation }) {
           <Text style={{ fontSize: 20 }}>🎓</Text>
         </View>
         <View>
-          <Text style={styles.headerTitle}>Училищен Симулатор</Text>
+          <Text style={styles.headerTitle}>Елена Пита</Text>
           <Text style={styles.headerSub}>Изберете урок за изпитване</Text>
         </View>
       </View>
