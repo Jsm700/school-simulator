@@ -82,6 +82,7 @@ export default function QuizScreen({ navigation }) {
   const [topicsDone, setTopicsDone] = useState({});
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [currentAnswerLang, setCurrentAnswerLang] = useState(lesson.lessonLanguage === "en" ? "en" : "bg");
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
   const messagesRef = useRef([]); // Синхронно следене на съобщенията
@@ -178,6 +179,10 @@ export default function QuizScreen({ navigation }) {
             studentGrade,
             lesson.kvKey || ""
           );
+
+      if (response.expectedAnswerLang === "en" || response.expectedAnswerLang === "bg") {
+        setCurrentAnswerLang(response.expectedAnswerLang);
+      }
 
       const finalText = isFirst ? `${greetingText} ${response.text}` : response.text;
       const withReply = [...messagesToSend, { role: "assistant", content: response.text }];
@@ -309,7 +314,7 @@ export default function QuizScreen({ navigation }) {
       speechAccumRef.current = "";
       setIsRecording(true);
       ExpoSpeechRecognitionModule.start({
-        lang: lesson.lessonLanguage === "en" ? "en-US" : "bg-BG",
+        lang: currentAnswerLang === "en" ? "en-US" : "bg-BG",
         continuous: true,
         interimResults: false,
         androidIntentOptions: {
