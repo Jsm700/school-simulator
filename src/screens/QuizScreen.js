@@ -309,7 +309,7 @@ export default function QuizScreen({ navigation }) {
       speechAccumRef.current = "";
       setIsRecording(true);
       ExpoSpeechRecognitionModule.start({
-        lang: "bg-BG",
+        lang: lesson.lessonLanguage === "en" ? "en-US" : "bg-BG",
         continuous: true,
         interimResults: false,
         androidIntentOptions: {
