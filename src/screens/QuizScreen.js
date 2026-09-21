@@ -326,7 +326,7 @@ export default function QuizScreen({ navigation }) {
     } catch (err) {
       setIsRecording(false);
     }
-  }, [isRecording]);
+  }, [isRecording, currentAnswerLang]);
 
   const topicEntries = lesson.topics.map(key => ({
     key,
