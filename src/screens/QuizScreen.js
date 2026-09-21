@@ -440,9 +440,22 @@ export default function QuizScreen({ navigation }) {
               <Text style={{ fontSize: 20 }}>🚀</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.micHint}>
-            {isRecording ? "Слушам... Натисни за спиране" : "🎙️ Натисни за гласов отговор"}
-          </Text>
+          <View style={styles.micHintRow}>
+            <Text style={styles.micHint}>
+              {isRecording ? "Слушам... Натисни за спиране" : "🎙️ Натисни за гласов отговор"}
+            </Text>
+            {lesson.lessonLanguage === "en" && (
+              <TouchableOpacity
+                style={styles.langToggle}
+                onPress={() => setCurrentAnswerLang(prev => (prev === "en" ? "bg" : "en"))}
+                disabled={isRecording}
+              >
+                <Text style={styles.langToggleText}>
+                  {currentAnswerLang === "en" ? "🇬🇧 Говоря английски" : "🇧🇬 Говоря български"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
 
@@ -589,6 +602,22 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#B5D4F4" },
   micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
+  micHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 5,
+  },
+  langToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  langToggleText: { fontSize: 11, color: colors.primaryDark, fontWeight: "600" },
   chipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   textInputActive: { borderColor: colors.primary },
   modalOverlay: {
