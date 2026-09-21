@@ -170,6 +170,7 @@ export const SUBJECT_OPTIONS = [
 export const PUBLISHER_OPTIONS = [
   { value: "klett", label: "Клет" },
   { value: "prosveta", label: "Просвета" },
+  { value: "super_minds", label: "Super Minds" },
 ];
 
 export function getLessons(classVal, subject, publisher) {
