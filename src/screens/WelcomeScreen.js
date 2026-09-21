@@ -24,6 +24,9 @@ import {
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 const STORAGE_KEY_NAME = "student_name";
 const STORAGE_KEY_GENDER = "student_gender";
+const STORAGE_KEY_CLASS = "last_class";
+const STORAGE_KEY_SUBJECT = "last_subject";
+const STORAGE_KEY_PUBLISHER = "last_publisher";
 
 async function fetchIndex() {
   const res = await fetch(WORKER_URL, {
@@ -100,6 +103,39 @@ export default function WelcomeScreen({ navigation }) {
   React.useEffect(() => {
     fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
   }, []);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const savedClass = await AsyncStorage.getItem(STORAGE_KEY_CLASS);
+        const savedSubject = await AsyncStorage.getItem(STORAGE_KEY_SUBJECT);
+        const savedPublisher = await AsyncStorage.getItem(STORAGE_KEY_PUBLISHER);
+        if (savedClass) setClassVal(savedClass);
+        if (savedSubject) setSubject(savedSubject);
+        if (savedPublisher) setPublisher(savedPublisher);
+      } catch (e) {
+        console.error("AsyncStorage load error (class/subject/publisher):", e);
+      }
+    })();
+  }, []);
+
+  const updateClassVal = (v) => {
+    setClassVal(v);
+    setSelectedLesson(null);
+    AsyncStorage.setItem(STORAGE_KEY_CLASS, v).catch(() => {});
+  };
+
+  const updateSubject = (v) => {
+    setSubject(v);
+    setSelectedLesson(null);
+    AsyncStorage.setItem(STORAGE_KEY_SUBJECT, v).catch(() => {});
+  };
+
+  const updatePublisher = (v) => {
+    setPublisher(v);
+    setSelectedLesson(null);
+    AsyncStorage.setItem(STORAGE_KEY_PUBLISHER, v).catch(() => {});
+  };
 
   const lessonGroup = (() => {
     const key = `${classVal}_${subject}_${publisher}`;
@@ -237,19 +273,19 @@ returnKeyType="done"
             label="Клас"
             options={CLASS_OPTIONS}
             value={classVal}
-            onChange={(v) => { setClassVal(v); setSelectedLesson(null); }}
+            onChange={updateClassVal}
           />
           <Picker
             label="Предмет"
             options={SUBJECT_OPTIONS}
             value={subject}
-            onChange={(v) => { setSubject(v); setSelectedLesson(null); }}
+            onChange={updateSubject}
           />
           <Picker
             label="Издателство"
             options={PUBLISHER_OPTIONS}
             value={publisher}
-            onChange={(v) => { setPublisher(v); setSelectedLesson(null); }}
+            onChange={updatePublisher}
           />
         </View>
 
