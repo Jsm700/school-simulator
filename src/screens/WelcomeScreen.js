@@ -1,5 +1,5 @@
 // src/screens/WelcomeScreen.js
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -26,7 +26,7 @@ const STORAGE_KEY_NAME = "student_name";
 const STORAGE_KEY_GENDER = "student_gender";
 const STORAGE_KEY_CLASS = "last_class";
 const STORAGE_KEY_SUBJECT = "last_subject";
-const STORAGE_KEY_PUBLISHER = "last_publisher";
+const STORAGE_KEY_SUBJECT_PUBLISHER_MAP = "subject_publisher_map";
 
 async function fetchIndex() {
   const res = await fetch(WORKER_URL, {
@@ -104,15 +104,22 @@ export default function WelcomeScreen({ navigation }) {
     fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
   }, []);
 
+  // Издателството се помни ПО ПРЕДМЕТ (напр. история -> Анубис, английски -> Super Minds),
+  // не като едно общо "последно избрано" — иначе смяната на предмет носи грешно издателство.
+  const subjectPublisherMapRef = useRef({});
+
   React.useEffect(() => {
     (async () => {
       try {
         const savedClass = await AsyncStorage.getItem(STORAGE_KEY_CLASS);
         const savedSubject = await AsyncStorage.getItem(STORAGE_KEY_SUBJECT);
-        const savedPublisher = await AsyncStorage.getItem(STORAGE_KEY_PUBLISHER);
+        const savedMapRaw = await AsyncStorage.getItem(STORAGE_KEY_SUBJECT_PUBLISHER_MAP);
+        const savedMap = savedMapRaw ? JSON.parse(savedMapRaw) : {};
+        subjectPublisherMapRef.current = savedMap;
         if (savedClass) setClassVal(savedClass);
         if (savedSubject) setSubject(savedSubject);
-        if (savedPublisher) setPublisher(savedPublisher);
+        const subjectToUse = savedSubject || subject;
+        if (savedMap[subjectToUse]) setPublisher(savedMap[subjectToUse]);
       } catch (e) {
         console.error("AsyncStorage load error (class/subject/publisher):", e);
       }
@@ -129,12 +136,17 @@ export default function WelcomeScreen({ navigation }) {
     setSubject(v);
     setSelectedLesson(null);
     AsyncStorage.setItem(STORAGE_KEY_SUBJECT, v).catch(() => {});
+    // Автоматично зарежда издателството, запомнено конкретно за този предмет (ако има такова)
+    const rememberedPublisher = subjectPublisherMapRef.current[v];
+    if (rememberedPublisher) setPublisher(rememberedPublisher);
   };
 
   const updatePublisher = (v) => {
     setPublisher(v);
     setSelectedLesson(null);
-    AsyncStorage.setItem(STORAGE_KEY_PUBLISHER, v).catch(() => {});
+    const updatedMap = { ...subjectPublisherMapRef.current, [subject]: v };
+    subjectPublisherMapRef.current = updatedMap;
+    AsyncStorage.setItem(STORAGE_KEY_SUBJECT_PUBLISHER_MAP, JSON.stringify(updatedMap)).catch(() => {});
   };
 
   const lessonGroup = (() => {
