@@ -164,6 +164,7 @@ export const SUBJECT_OPTIONS = [
   { value: "history", label: "История и цивилизации" },
   { value: "geography", label: "География и икономика" },
   { value: "biology", label: "Биология" },
+  { value: "english", label: "Английски език" },
 ];
 
 export const PUBLISHER_OPTIONS = [
