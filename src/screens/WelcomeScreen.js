@@ -1,5 +1,5 @@
 // src/screens/WelcomeScreen.js
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,13 @@ import {
   StyleSheet,
   StatusBar,
   TextInput,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
+import { getTotalPoints, resetPoints } from "../services/points";
 import { Ionicons } from "@expo/vector-icons";
 import {
   CLASS_OPTIONS,
@@ -99,10 +101,37 @@ export default function WelcomeScreen({ navigation }) {
   const [publisher, setPublisher] = useState("klett");
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [kvIndex, setKvIndex] = useState(null);
+  const [totalPoints, setTotalPoints] = useState(0);
 
   React.useEffect(() => {
     fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
   }, []);
+
+  const refreshPoints = React.useCallback(() => {
+    getTotalPoints().then(setTotalPoints);
+  }, []);
+
+  React.useEffect(() => {
+    refreshPoints();
+  }, [refreshPoints]);
+
+  const handleResetPoints = React.useCallback(() => {
+    Alert.alert(
+      "Занули точките?",
+      "Целият точков дневник ще бъде изтрит. Действието не може да се отмени.",
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Занули",
+          style: "destructive",
+          onPress: async () => {
+            await resetPoints();
+            refreshPoints();
+          },
+        },
+      ]
+    );
+  }, [refreshPoints]);
 
   // Издателството се помни ПО ПРЕДМЕТ (напр. история -> Анубис, английски -> Super Minds),
   // не като едно общо "последно избрано" — иначе смяната на предмет носи грешно издателство.
@@ -230,9 +259,12 @@ export default function WelcomeScreen({ navigation }) {
         <View style={styles.headerIcon}>
           <Text style={{ fontSize: 20 }}>🎓</Text>
         </View>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Елена Пита</Text>
           <Text style={styles.headerSub}>Изберете урок за изпитване</Text>
+        </View>
+        <View style={styles.pointsBadge}>
+          <Text style={styles.pointsBadgeText}>⭐ {totalPoints}</Text>
         </View>
       </View>
 
@@ -317,6 +349,9 @@ returnKeyType="done"
             onPress={() => navigation.navigate("ScheduleSettings", {})}
           >
             <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.scheduleLink} onPress={handleResetPoints}>
+            <Text style={styles.resetPointsText}>🔄 Занули точките</Text>
           </TouchableOpacity>
         </View>
 
@@ -410,6 +445,14 @@ const styles = StyleSheet.create({
   dnesCardSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
   dnesCardArrow: { fontSize: 20, color: colors.primary },
   scheduleLink: { marginTop: spacing.md, alignItems: "center" },
+  resetPointsText: { fontSize: 12, color: "#B23B3B" },
+  pointsBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  pointsBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   scheduleLinkText: { fontSize: 12, color: colors.primary },
   header: {
     backgroundColor: colors.primary,
