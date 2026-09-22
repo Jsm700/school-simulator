@@ -22,6 +22,7 @@ import { getTeacherResponse, getAudio } from "../services/ai";
 import { consumeGreetingPrefetch } from "../services/prefetch";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
+import { markLessonCompleted } from "../services/progress";
 
 function TopicPill({ label, done }) {
   return (
@@ -292,6 +293,23 @@ export default function QuizScreen({ navigation }) {
     setAskingUnknownWord(prev => !prev);
   }, []);
 
+  const handleFinishLesson = useCallback(() => {
+    Alert.alert(
+      "Приключи урока?",
+      "Урокът ще се отбележи като завършен.",
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Да, готово",
+          onPress: async () => {
+            await markLessonCompleted(lesson.kvKey);
+            navigation.goBack();
+          },
+        },
+      ]
+    );
+  }, [lesson.kvKey, navigation]);
+
   useSpeechRecognitionEvent("result", (event) => {
     const segment = event.results?.[0]?.transcript;
     if (segment) {
@@ -382,6 +400,12 @@ export default function QuizScreen({ navigation }) {
         </ScrollView>
 
         <View style={styles.inputContainer}>
+          {lesson.kvKey ? (
+            <TouchableOpacity style={styles.finishBtn} onPress={handleFinishLesson}>
+              <Text style={styles.finishBtnText}>✅ Приключих урока</Text>
+            </TouchableOpacity>
+          ) : null}
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -565,6 +589,17 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? spacing.xl : spacing.lg,
   },
   chipsRow: { marginBottom: spacing.sm },
+  finishBtn: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.success,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  finishBtnText: { color: colors.success, fontSize: 13, fontWeight: "700" },
   chip: {
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: radius.full,
