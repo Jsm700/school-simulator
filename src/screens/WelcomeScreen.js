@@ -241,6 +241,19 @@ export default function WelcomeScreen({ navigation }) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Днес entry point */}
+        <TouchableOpacity
+          style={styles.dnesCard}
+          onPress={() => navigation.navigate("Dnes", {})}
+        >
+          <Text style={styles.dnesCardIcon}>📅</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.dnesCardTitle}>Днес</Text>
+            <Text style={styles.dnesCardSubtitle}>Виж какво предстои по график</Text>
+          </View>
+          <Text style={styles.dnesCardArrow}>›</Text>
+        </TouchableOpacity>
+
         {/* Student Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>👤 За ученика</Text>
@@ -299,6 +312,12 @@ returnKeyType="done"
             value={publisher}
             onChange={updatePublisher}
           />
+          <TouchableOpacity
+            style={styles.scheduleLink}
+            onPress={() => navigation.navigate("ScheduleSettings", {})}
+          >
+            <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Lessons */}
@@ -376,6 +395,22 @@ returnKeyType="done"
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.primary },
+  dnesCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  dnesCardIcon: { fontSize: 22, marginRight: spacing.sm },
+  dnesCardTitle: { fontSize: 15, fontWeight: "700", color: colors.primaryDark },
+  dnesCardSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
+  dnesCardArrow: { fontSize: 20, color: colors.primary },
+  scheduleLink: { marginTop: spacing.md, alignItems: "center" },
+  scheduleLinkText: { fontSize: 12, color: colors.primary },
   header: {
     backgroundColor: colors.primary,
     flexDirection: "row",
