@@ -23,6 +23,7 @@ import { consumeGreetingPrefetch } from "../services/prefetch";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { markLessonCompleted, isLessonCompleted } from "../services/progress";
+import { awardLessonPoints } from "../services/points";
 
 function TopicPill({ label, done }) {
   return (
@@ -90,6 +91,7 @@ export default function QuizScreen({ navigation }) {
   const currentSoundRef = useRef(null); // текущо звучащ Audio.Sound, за да го спрем при излизане от екрана
   const messagesRef = useRef([]); // Синхронно следене на съобщенията
   const speechAccumRef = useRef(""); // Натрупан текст между отделни result събития в continuous режим
+  const exchangeCountRef = useRef(0); // брой AI отговори през сесията — база за пропорционалните точки при "Приключих"
 
   // Речник на урока + режим "непозната дума"
   const [vocabWords, setVocabWords] = useState(null); // null = още не е зареден
@@ -210,6 +212,7 @@ export default function QuizScreen({ navigation }) {
       setMessages(withReply);
       setDisplayMessages(d => [...d, { role: "ai", text: finalText }]);
       detectTopics(response.text || "", "ai");
+      exchangeCountRef.current += 1;
       setIsLoading(false);
 
       ExpoSpeechRecognitionModule.stop();
@@ -339,12 +342,25 @@ export default function QuizScreen({ navigation }) {
           onPress: async () => {
             await markLessonCompleted(lesson.kvKey);
             setAlreadyCompleted(true);
-            navigation.goBack();
+            const topicsTotal = (lesson.topics || []).length;
+            const topicsCovered = exchangeCountRef.current;
+            const result = await awardLessonPoints({
+              lessonKey: lesson.kvKey,
+              subject: lesson.subject || "",
+              lessonTitle: lesson.title || "",
+              topicsTotal,
+              topicsCovered,
+            });
+            Alert.alert(
+              "Браво! 🎉",
+              `Спечели ${result.points} точки${result.currentStreak > 1 ? ` (стрийк: ${result.currentStreak} дни)` : ""}.`,
+              [{ text: "Супер", onPress: () => navigation.goBack() }]
+            );
           },
         },
       ]
     );
-  }, [lesson.kvKey, navigation]);
+  }, [lesson.kvKey, lesson.topics, lesson.subject, lesson.title, navigation]);
 
   useSpeechRecognitionEvent("result", (event) => {
     const segment = event.results?.[0]?.transcript;
