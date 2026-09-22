@@ -18,6 +18,18 @@ export default function Layout() {
             animation: "slide_from_right",
           }}
         />
+        <Stack.Screen
+          name="dnes"
+          options={{
+            animation: "slide_from_right",
+          }}
+        />
+        <Stack.Screen
+          name="schedule-settings"
+          options={{
+            animation: "slide_from_right",
+          }}
+        />
       </Stack>
     </SafeAreaProvider>
   );
