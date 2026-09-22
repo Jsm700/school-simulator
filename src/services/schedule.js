@@ -3,8 +3,30 @@
 // реалното училище. "Днес" екранът гледа НАПРЕД (предстоящи 1-2 дни), не назад,
 // затова липсва нужда от "нямахме час" бутон — виж lesson-livening-brainstorm.
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SUBJECT_OPTIONS } from "../data/lessons";
 
 const STORAGE_KEY_SCHEDULE = "weekly_schedule"; // { subjectValue: [1,3,5], ... } 1=Пон ... 7=Нед
+
+// Пълният списък училищни предмети — за самия ГРАФИК (чиста справка), не за
+// съдържанието на уроците. SUBJECT_OPTIONS (lessons.js) решава кои от тях имат
+// реални уроци в приложението; останалите се показват само информативно в "Днес".
+const contentSubjectValues = new Set(SUBJECT_OPTIONS.map((s) => s.value));
+
+export const ALL_SCHOOL_SUBJECTS = [
+  { value: "bulgarian", label: "Български език и литература" },
+  { value: "math", label: "Математика" },
+  { value: "human_nature", label: "Човекът и природата" },
+  { value: "human_society", label: "Човекът и обществото" },
+  { value: "history", label: "История и цивилизации" },
+  { value: "geography", label: "География и икономика" },
+  { value: "biology", label: "Биология" },
+  { value: "english", label: "Английски език" },
+  { value: "music", label: "Музика" },
+  { value: "art", label: "Изобразително изкуство" },
+  { value: "technology", label: "Технологии и предприемачество" },
+  { value: "pe", label: "Физическо възпитание и спорт" },
+  { value: "computing", label: "Компютърно моделиране" },
+].map((s) => ({ ...s, hasContent: contentSubjectValues.has(s.value) }));
 
 export const WEEKDAY_LABELS = [
   { value: 1, label: "Пон" },
