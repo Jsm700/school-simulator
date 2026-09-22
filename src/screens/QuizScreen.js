@@ -22,7 +22,7 @@ import { getTeacherResponse, getAudio } from "../services/ai";
 import { consumeGreetingPrefetch } from "../services/prefetch";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
-import { markLessonCompleted } from "../services/progress";
+import { markLessonCompleted, isLessonCompleted } from "../services/progress";
 
 function TopicPill({ label, done }) {
   return (
@@ -86,6 +86,8 @@ export default function QuizScreen({ navigation }) {
   const [currentAnswerLang, setCurrentAnswerLang] = useState(lesson.lessonLanguage === "en" ? "en" : "bg");
   const scrollRef = useRef(null);
   const isFirstLoad = useRef(true);
+  const isMountedRef = useRef(true); // false след unmount — спира по-нататъшно аудио/навигация
+  const currentSoundRef = useRef(null); // текущо звучащ Audio.Sound, за да го спрем при излизане от екрана
   const messagesRef = useRef([]); // Синхронно следене на съобщенията
   const speechAccumRef = useRef(""); // Натрупан текст между отделни result събития в continuous режим
 
@@ -94,6 +96,13 @@ export default function QuizScreen({ navigation }) {
   const [vocabModalVisible, setVocabModalVisible] = useState(false);
   const [vocabLoading, setVocabLoading] = useState(false);
   const [askingUnknownWord, setAskingUnknownWord] = useState(false);
+  const [alreadyCompleted, setAlreadyCompleted] = useState(false);
+
+  useEffect(() => {
+    if (lesson.kvKey) {
+      isLessonCompleted(lesson.kvKey).then(setAlreadyCompleted);
+    }
+  }, [lesson.kvKey]);
 
   // Hint chips динамично според урока
   const hintChips = [
@@ -112,17 +121,26 @@ export default function QuizScreen({ navigation }) {
   // Изговаря един base64 WAV клип и чака да свърши (с 10 сек safety timeout).
   // isSpeaking се управлява отвън от sendToAI, за да покрива цялата поредица клипове.
   const speakBase64 = useCallback(async (base64Audio) => {
-    if (!base64Audio) return;
+    if (!base64Audio || !isMountedRef.current) return;
     await new Promise((resolve) => {
       let resolved = false;
       Audio.Sound.createAsync(
         { uri: `data:audio/mp3;base64,${base64Audio}` },
         { shouldPlay: true }
       ).then(({ sound }) => {
+        if (!isMountedRef.current) {
+          // Екранът е затворен точно докато звукът се е зареждал — не го пускаме изобщо.
+          sound.unloadAsync();
+          resolved = true;
+          resolve();
+          return;
+        }
+        currentSoundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {
           if ((status.didJustFinish || status.error) && !resolved) {
             resolved = true;
             sound.unloadAsync();
+            if (currentSoundRef.current === sound) currentSoundRef.current = null;
             resolve();
           }
         });
@@ -200,11 +218,11 @@ export default function QuizScreen({ navigation }) {
       setIsSpeaking(true);
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
 
-      if (isFirst) {
+      if (isFirst && isMountedRef.current) {
         // Поздравът тръгва СЕГА, едва след като чат TTS-то вече е приключило - никакво застъпване на Gemini заявки.
         try {
           const greetingAudio = await getAudio(greetingText);
-          await speakBase64(greetingAudio);
+          if (isMountedRef.current) await speakBase64(greetingAudio);
         } catch (greetErr) {
           // Ако поздравът се провали, продължаваме директно с въпроса, без да чупим потока.
         }
@@ -212,16 +230,19 @@ export default function QuizScreen({ navigation }) {
 
       if (response.audioChunks && response.audioChunks.length > 0) {
         for (const chunk of response.audioChunks) {
+          if (!isMountedRef.current) break; // детето вече е напуснало този урок - не продължаваме да пускаме звук
           await speakBase64(chunk);
         }
       } else if (response.text) {
         const sentences = response.text.match(/[^.!?]+[.!?]+/g) || [response.text];
         for (const s of sentences) {
+          if (!isMountedRef.current) break;
           const audio = await getAudio(s.trim());
+          if (!isMountedRef.current) break;
           await speakBase64(audio);
         }
       }
-      setIsSpeaking(false);
+      if (isMountedRef.current) setIsSpeaking(false);
     } catch (error) {
       setDisplayMessages(d => [...d, { role: "ai", text: `Грешка: ${error.message}` }]);
     } finally {
@@ -238,6 +259,20 @@ export default function QuizScreen({ navigation }) {
       sendToAI("", true, prefetched);
     }
   }, [sendToAI]);
+
+  // Спира незабавно всякакво звучащо аудио, ако детето напусне този урок (назад/друг урок),
+  // докато Елена все още говори — предотвратява застъпване на гласове от два едновременни урока.
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      ExpoSpeechRecognitionModule.stop();
+      if (currentSoundRef.current) {
+        currentSoundRef.current.stopAsync().catch(() => {});
+        currentSoundRef.current.unloadAsync().catch(() => {});
+        currentSoundRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSend = useCallback(() => {
     const text = inputText.trim();
@@ -303,6 +338,7 @@ export default function QuizScreen({ navigation }) {
           text: "Да, готово",
           onPress: async () => {
             await markLessonCompleted(lesson.kvKey);
+            setAlreadyCompleted(true);
             navigation.goBack();
           },
         },
@@ -401,8 +437,13 @@ export default function QuizScreen({ navigation }) {
 
         <View style={styles.inputContainer}>
           {lesson.kvKey ? (
-            <TouchableOpacity style={styles.finishBtn} onPress={handleFinishLesson}>
-              <Text style={styles.finishBtnText}>✅ Приключих урока</Text>
+            <TouchableOpacity
+              style={[styles.finishBtn, alreadyCompleted && styles.finishBtnDone]}
+              onPress={alreadyCompleted ? () => navigation.goBack() : handleFinishLesson}
+            >
+              <Text style={styles.finishBtnText}>
+                {alreadyCompleted ? "✓ Урокът вече е завършен" : "✅ Приключих урока"}
+              </Text>
             </TouchableOpacity>
           ) : null}
 
@@ -598,6 +639,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: 8,
     alignItems: "center",
+  },
+  finishBtnDone: {
+    backgroundColor: colors.card,
+    borderColor: colors.border,
   },
   finishBtnText: { color: colors.success, fontSize: 13, fontWeight: "700" },
   chip: {
