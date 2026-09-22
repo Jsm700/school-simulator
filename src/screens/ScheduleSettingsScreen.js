@@ -2,8 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SUBJECT_OPTIONS } from "../data/lessons";
-import { getSchedule, setSchedule as saveSchedule, WEEKDAY_LABELS } from "../services/schedule";
+import { getSchedule, setSchedule as saveSchedule, WEEKDAY_LABELS, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { colors, spacing, radius } from "../theme";
 
 export default function ScheduleSettingsScreen({ navigation }) {
@@ -39,13 +38,17 @@ export default function ScheduleSettingsScreen({ navigation }) {
         <Text style={styles.headerTitle}>Седмичен график</Text>
       </View>
       <Text style={styles.hint}>
-        Отбележи кои дни има детето час по всеки предмет в училище — приложението ще
-        предлага упражнение вечерта преди часа, не задължително всеки ден.
+        Отбележи кои дни има детето час по всеки предмет в училище. Предметите с
+        „📚 с уроци" водят до готово упражнение в „Днес"; останалите се показват само
+        за справка какво предстои.
       </Text>
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        {SUBJECT_OPTIONS.map((subj) => (
+        {ALL_SCHOOL_SUBJECTS.map((subj) => (
           <View key={subj.value} style={styles.subjectRow}>
-            <Text style={styles.subjectLabel}>{subj.label}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: spacing.sm }}>
+              <Text style={styles.subjectLabel}>{subj.label}</Text>
+              {subj.hasContent && <Text style={styles.contentBadge}>📚 с уроци</Text>}
+            </View>
             <View style={styles.daysRow}>
               {WEEKDAY_LABELS.map((d) => {
                 const active = (schedule[subj.value] || []).includes(d.value);
@@ -97,7 +100,8 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: colors.border,
   },
-  subjectLabel: { fontSize: 14, fontWeight: "600", color: colors.text, marginBottom: spacing.sm },
+  subjectLabel: { fontSize: 14, fontWeight: "600", color: colors.text },
+  contentBadge: { fontSize: 10, color: colors.primaryDark, backgroundColor: colors.primaryLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
   daysRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   dayChip: {
     paddingHorizontal: 12,
