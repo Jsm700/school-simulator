@@ -110,7 +110,7 @@ export default function DnesScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Готово за утре</Text>
+        <Text style={styles.headerTitle}>Предмети за утре</Text>
         <Text style={styles.headerSubtitle}>
           {tasks.length > 0
             ? `${tasks.length} ${tasks.length === 1 ? "предмет предстои" : "предмета предстоят"}`
@@ -138,8 +138,8 @@ export default function DnesScreen({ navigation }) {
                   <Text style={{ fontSize: 16 }}>📘</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.taskTitle}>{lesson.title}</Text>
-                  <Text style={styles.taskSubtitle}>{subjectLabelOf(subject)}</Text>
+                  <Text style={styles.taskTitle}>{subjectLabelOf(subject)}</Text>
+                  <Text style={styles.taskSubtitle}>{lesson.title}</Text>
                 </View>
                 <Text style={styles.taskArrow}>›</Text>
               </TouchableOpacity>
