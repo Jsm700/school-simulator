@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
 import { getTotalPoints, resetPoints } from "../services/points";
+import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
   CLASS_OPTIONS,
@@ -114,6 +115,12 @@ export default function WelcomeScreen({ navigation }) {
   React.useEffect(() => {
     refreshPoints();
   }, [refreshPoints]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshPoints();
+    }, [refreshPoints])
+  );
 
   const handleResetPoints = React.useCallback(() => {
     Alert.alert(
