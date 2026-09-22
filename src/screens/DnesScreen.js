@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SUBJECT_OPTIONS, getLessons } from "../data/lessons";
-import { getSchedule, getUpcomingSubjects } from "../services/schedule";
+import { getLessons } from "../data/lessons";
+import { getSchedule, getUpcomingSubjects, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { getCompletedLessons } from "../services/progress";
 import { colors, spacing, radius } from "../theme";
 
@@ -24,7 +24,8 @@ async function fetchIndex() {
   }
 }
 
-const subjectLabelOf = (value) => (SUBJECT_OPTIONS.find((s) => s.value === value) || {}).label || value;
+const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === value) || {}).label || value;
+const subjectHasContent = (value) => !!(ALL_SCHOOL_SUBJECTS.find((s) => s.value === value) || {}).hasContent;
 
 export default function DnesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -57,14 +58,18 @@ export default function DnesScreen({ navigation }) {
       const built = [];
 
       for (const { subject } of upcoming) {
+        if (!subjectHasContent(subject)) {
+          // Няма уроци в приложението за този предмет — показва се само за справка.
+          built.push({ subject, lesson: null });
+          continue;
+        }
         const publisher = publisherMap[subject] || "klett";
         const key = `${classVal}_${subject}_${publisher}`;
         const group = (kvIndex && kvIndex[key]) || getLessons(classVal, subject, publisher);
-        if (!group || !group.lessons) continue;
-        const nextLesson = group.lessons.find(
-          (l) => l.kvKey && !completed.includes(l.kvKey)
-        );
-        if (nextLesson) built.push({ subject, lesson: nextLesson });
+        const nextLesson = group && group.lessons
+          ? group.lessons.find((l) => l.kvKey && !completed.includes(l.kvKey))
+          : null;
+        built.push({ subject, lesson: nextLesson });
       }
 
       setTasks(built);
@@ -122,31 +127,46 @@ export default function DnesScreen({ navigation }) {
             </Text>
           </View>
         ) : (
-          tasks.map(({ subject, lesson }) => (
-            <TouchableOpacity
-              key={lesson.kvKey}
-              style={styles.taskRow}
-              onPress={() => openLesson(lesson)}
-            >
-              <View style={styles.taskIcon}>
-                <Text style={{ fontSize: 16 }}>📘</Text>
+          tasks.map(({ subject, lesson }, idx) =>
+            lesson ? (
+              <TouchableOpacity
+                key={lesson.kvKey}
+                style={styles.taskRow}
+                onPress={() => openLesson(lesson)}
+              >
+                <View style={styles.taskIcon}>
+                  <Text style={{ fontSize: 16 }}>📘</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.taskTitle}>{lesson.title}</Text>
+                  <Text style={styles.taskSubtitle}>{subjectLabelOf(subject)}</Text>
+                </View>
+                <Text style={styles.taskArrow}>›</Text>
+              </TouchableOpacity>
+            ) : (
+              <View key={`info-${subject}-${idx}`} style={[styles.taskRow, styles.taskRowInfo]}>
+                <View style={styles.taskIcon}>
+                  <Text style={{ fontSize: 16 }}>🗓️</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.taskTitle}>{subjectLabelOf(subject)}</Text>
+                  <Text style={styles.taskSubtitleMuted}>Предстои — все още няма уроци тук</Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.taskTitle}>{lesson.title}</Text>
-                <Text style={styles.taskSubtitle}>{subjectLabelOf(subject)}</Text>
-              </View>
-              <Text style={styles.taskArrow}>›</Text>
-            </TouchableOpacity>
-          ))
+            )
+          )
         )}
       </ScrollView>
 
       <View style={styles.footer}>
-        {tasks.length > 0 && (
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => openLesson(tasks[0].lesson)}>
-            <Text style={styles.primaryBtnText}>Продължи {subjectLabelOf(tasks[0].subject)}</Text>
-          </TouchableOpacity>
-        )}
+        {(() => {
+          const firstActionable = tasks.find((t) => t.lesson);
+          return firstActionable ? (
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => openLesson(firstActionable.lesson)}>
+              <Text style={styles.primaryBtnText}>Продължи {subjectLabelOf(firstActionable.subject)}</Text>
+            </TouchableOpacity>
+          ) : null;
+        })()}
         <TouchableOpacity style={styles.linkBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.linkBtnText}>Разгледай всички уроци</Text>
         </TouchableOpacity>
@@ -181,6 +201,8 @@ const styles = StyleSheet.create({
   },
   taskTitle: { fontSize: 14, fontWeight: "600", color: colors.text },
   taskSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
+  taskSubtitleMuted: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  taskRowInfo: { opacity: 0.75, borderStyle: "dashed" },
   taskArrow: { fontSize: 20, color: colors.muted },
   footer: { padding: spacing.lg, gap: spacing.sm },
   primaryBtn: { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: "center" },
