@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import WelcomeScreen from "../src/screens/WelcomeScreen";
 import ConnectDeviceScreen from "../src/screens/ConnectDeviceScreen";
+import ParentDashboardScreen from "../src/screens/ParentDashboardScreen";
 import { getLinkedDevice } from "../src/services/deviceLink";
 import { colors } from "../src/theme";
 
@@ -47,6 +48,10 @@ export default function Index() {
 
   if (!linked) {
     return <ConnectDeviceScreen onLinked={(link) => setLinked(link)} />;
+  }
+
+  if (linked.role === "parent") {
+    return <ParentDashboardScreen />;
   }
 
   return <WelcomeScreen navigation={navigation} />;
