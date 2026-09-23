@@ -1,48 +1,36 @@
 // src/services/sceneProgress.js
-// Пази позицията на детето вътре в "Оживи урока" (LessonReviveScreen) между сесии —
-// коя сцена гледа и какви избори вече е направило за всеки урок (по kvKey).
-// Използва се, за да "Днес" може да покаже точна позиция ("сцена 3/6"), а самият
-// LessonReviveScreen — за да продължи оттам, откъдето детето е излязло последно.
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const STORAGE_KEY = "scene_progress"; // { [kvKey]: { sceneIndex, total, choices, updatedAt } }
-
-async function readAll() {
-  try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    console.error("sceneProgress.readAll error:", e);
-    return {};
-  }
-}
+// Пази позицията на детето вътре в "Оживи урока" между сесии — коя сцена
+// гледа и какви избори вече е направило, за всеки урок (по kvKey). От
+// 2026-09-23 се пази в backend-а (per child_id), не локално на устройството —
+// затова "Днес" на родителското устройство може да покаже реалната позиция.
+import { BACKEND_URL, getCurrentChildId } from "./deviceLink";
 
 export async function getSceneProgress(kvKey) {
   if (!kvKey) return null;
-  const all = await readAll();
-  return all[kvKey] || null;
+  const childId = await getCurrentChildId();
+  if (!childId) return null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/children/${childId}/scene-progress/${kvKey}`);
+    const data = await res.json();
+    if (!data || Object.keys(data).length === 0) return null;
+    return { sceneIndex: data.scene_index, total: data.total, choices: data.choices || {} };
+  } catch (e) {
+    console.error("sceneProgress.getSceneProgress error:", e);
+    return null;
+  }
 }
 
 export async function saveSceneProgress(kvKey, { sceneIndex, total, choices }) {
   if (!kvKey) return;
+  const childId = await getCurrentChildId();
+  if (!childId) return;
   try {
-    const all = await readAll();
-    all[kvKey] = { sceneIndex, total, choices: choices || {}, updatedAt: Date.now() };
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    await fetch(`${BACKEND_URL}/children/${childId}/scene-progress/${kvKey}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene_index: sceneIndex, total, choices: choices || {} }),
+    });
   } catch (e) {
     console.error("sceneProgress.saveSceneProgress error:", e);
-  }
-}
-
-export async function clearSceneProgress(kvKey) {
-  if (!kvKey) return;
-  try {
-    const all = await readAll();
-    if (all[kvKey]) {
-      delete all[kvKey];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-    }
-  } catch (e) {
-    console.error("sceneProgress.clearSceneProgress error:", e);
   }
 }

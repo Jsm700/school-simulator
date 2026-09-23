@@ -2,11 +2,8 @@
 // Седмичен ПОВТАРЯЩ СЕ шаблон — кой предмет кой ден от седмицата има детето в
 // реалното училище. "Днес" екранът гледа НАПРЕД (предстоящи 1-2 дни), не назад,
 // затова липсва нужда от "нямахме час" бутон — виж lesson-livening-brainstorm.
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SUBJECT_OPTIONS } from "../data/lessons";
-
-const STORAGE_KEY_SCHEDULE = "weekly_schedule"; // { subjectValue: [1,3,5], ... } 1=Пон ... 7=Нед
-
+import { BACKEND_URL, getCurrentChildId } from "./deviceLink";
 // Пълният списък училищни предмети — за самия ГРАФИК (чиста справка), не за
 // съдържанието на уроците. SUBJECT_OPTIONS (lessons.js) решава кои от тях имат
 // реални уроци в приложението; останалите се показват само информативно в "Днес".
@@ -37,9 +34,11 @@ export const WEEKDAY_LABELS = [
 ];
 
 export async function getSchedule() {
+  const childId = await getCurrentChildId();
+  if (!childId) return {};
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY_SCHEDULE);
-    return raw ? JSON.parse(raw) : {};
+    const res = await fetch(`${BACKEND_URL}/children/${childId}/schedule`);
+    return await res.json();
   } catch (e) {
     console.error("schedule.getSchedule error:", e);
     return {};
@@ -47,8 +46,14 @@ export async function getSchedule() {
 }
 
 export async function setSchedule(schedule) {
+  const childId = await getCurrentChildId();
+  if (!childId) return;
   try {
-    await AsyncStorage.setItem(STORAGE_KEY_SCHEDULE, JSON.stringify(schedule));
+    await fetch(`${BACKEND_URL}/children/${childId}/schedule`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schedule }),
+    });
   } catch (e) {
     console.error("schedule.setSchedule error:", e);
   }
