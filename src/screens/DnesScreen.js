@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLessons } from "../data/lessons";
 import { getSchedule, getUpcomingSubjects, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { getCompletedLessons } from "../services/progress";
+import { getTodaySnapshot, saveTodaySnapshot } from "../services/dailyTasks";
 import { colors, spacing, radius } from "../theme";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
@@ -35,7 +36,7 @@ export default function DnesScreen({ navigation }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [schedule, completed, kvIndex, savedName, savedGender, savedClass, publisherMapRaw] =
+      const [schedule, completed, kvIndex, savedName, savedGender, savedClass, publisherMapRaw, snapshot] =
         await Promise.all([
           getSchedule(),
           getCompletedLessons(),
@@ -44,6 +45,7 @@ export default function DnesScreen({ navigation }) {
           AsyncStorage.getItem("student_gender"),
           AsyncStorage.getItem("last_class"),
           AsyncStorage.getItem("subject_publisher_map"),
+          getTodaySnapshot(),
         ]);
 
       const classVal = savedClass || "4";
@@ -55,22 +57,35 @@ export default function DnesScreen({ navigation }) {
       });
 
       const upcoming = getUpcomingSubjects(schedule, 1);
-      const built = [];
+      const assignments = { ...(snapshot ? snapshot.assignments : {}) };
+      let assignmentsChanged = false;
 
       for (const { subject } of upcoming) {
-        if (!subjectHasContent(subject)) {
-          // Няма уроци в приложението за този предмет — показва се само за справка.
-          built.push({ subject, lesson: null });
-          continue;
-        }
+        if (!subjectHasContent(subject)) continue; // информативните редове не се "заключват" за деня
+        if (assignments[subject]) continue; // вече има фиксирана задача за днес за този предмет
+
         const publisher = publisherMap[subject] || "klett";
         const key = `${classVal}_${subject}_${publisher}`;
         const group = (kvIndex && kvIndex[key]) || getLessons(classVal, subject, publisher);
         const nextLesson = group && group.lessons
           ? group.lessons.find((l) => l.kvKey && !completed.includes(l.kvKey))
           : null;
-        built.push({ subject, lesson: nextLesson });
+        if (nextLesson) {
+          assignments[subject] = nextLesson;
+          assignmentsChanged = true;
+        }
       }
+
+      if (assignmentsChanged || !snapshot) {
+        await saveTodaySnapshot(assignments);
+      }
+
+      const built = upcoming.map(({ subject }) => {
+        if (!subjectHasContent(subject)) return { subject, lesson: null, done: false };
+        const lesson = assignments[subject] || null;
+        const done = lesson ? completed.includes(lesson.kvKey) : false;
+        return { subject, lesson, done };
+      });
 
       setTasks(built);
     } finally {
@@ -113,7 +128,7 @@ export default function DnesScreen({ navigation }) {
         <Text style={styles.headerTitle}>Предмети за утре</Text>
         <Text style={styles.headerSubtitle}>
           {tasks.length > 0
-            ? `${tasks.length} ${tasks.length === 1 ? "предмет предстои" : "предмета предстоят"}`
+            ? `${tasks.filter((t) => t.done).length} от ${tasks.filter((t) => t.lesson).length} задачи готови`
             : "Нищо не предстои в графика"}
         </Text>
       </View>
@@ -127,21 +142,26 @@ export default function DnesScreen({ navigation }) {
             </Text>
           </View>
         ) : (
-          tasks.map(({ subject, lesson }, idx) =>
+          tasks.map(({ subject, lesson, done }, idx) =>
             lesson ? (
               <TouchableOpacity
                 key={lesson.kvKey}
-                style={styles.taskRow}
-                onPress={() => openLesson(lesson)}
+                style={[styles.taskRow, done && styles.taskRowDone]}
+                onPress={() => (done ? null : openLesson(lesson))}
+                disabled={done}
               >
-                <View style={styles.taskIcon}>
-                  <Text style={{ fontSize: 16 }}>📘</Text>
+                <View style={[styles.taskIcon, done && styles.taskIconDone]}>
+                  <Text style={{ fontSize: 16 }}>{done ? "✅" : "📘"}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.taskTitle}>{subjectLabelOf(subject)}</Text>
-                  <Text style={styles.taskSubtitle}>{lesson.title}</Text>
+                  <Text style={[styles.taskTitle, done && styles.taskTitleDone]}>
+                    {subjectLabelOf(subject)}
+                  </Text>
+                  <Text style={done ? styles.taskSubtitleMuted : styles.taskSubtitle}>
+                    {done ? "Готово" : lesson.title}
+                  </Text>
                 </View>
-                <Text style={styles.taskArrow}>›</Text>
+                {!done && <Text style={styles.taskArrow}>›</Text>}
               </TouchableOpacity>
             ) : (
               <View key={`info-${subject}-${idx}`} style={[styles.taskRow, styles.taskRowInfo]}>
@@ -160,7 +180,7 @@ export default function DnesScreen({ navigation }) {
 
       <View style={styles.footer}>
         {(() => {
-          const firstActionable = tasks.find((t) => t.lesson);
+          const firstActionable = tasks.find((t) => t.lesson && !t.done);
           return firstActionable ? (
             <TouchableOpacity style={styles.primaryBtn} onPress={() => openLesson(firstActionable.lesson)}>
               <Text style={styles.primaryBtnText}>Продължи {subjectLabelOf(firstActionable.subject)}</Text>
@@ -200,9 +220,12 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   taskTitle: { fontSize: 14, fontWeight: "600", color: colors.text },
+  taskTitleDone: { textDecorationLine: "line-through", color: colors.muted },
   taskSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
   taskSubtitleMuted: { fontSize: 12, color: colors.muted, marginTop: 2 },
   taskRowInfo: { opacity: 0.75, borderStyle: "dashed" },
+  taskRowDone: { opacity: 0.6 },
+  taskIconDone: { backgroundColor: colors.successLight },
   taskArrow: { fontSize: 20, color: colors.muted },
   footer: { padding: spacing.lg, gap: spacing.sm },
   primaryBtn: { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: "center" },
