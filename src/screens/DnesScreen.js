@@ -7,6 +7,7 @@ import { getLessons } from "../data/lessons";
 import { getSchedule, getUpcomingSubjects, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { getCompletedLessons } from "../services/progress";
 import { getTodaySnapshot, saveTodaySnapshot } from "../services/dailyTasks";
+import { getSceneProgress } from "../services/sceneProgress";
 import { colors, spacing, radius } from "../theme";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
@@ -80,12 +81,16 @@ export default function DnesScreen({ navigation }) {
         await saveTodaySnapshot(assignments);
       }
 
-      const built = upcoming.map(({ subject }) => {
-        if (!subjectHasContent(subject)) return { subject, lesson: null, done: false };
-        const lesson = assignments[subject] || null;
-        const done = lesson ? completed.includes(lesson.kvKey) : false;
-        return { subject, lesson, done };
-      });
+      const built = await Promise.all(
+        upcoming.map(async ({ subject }) => {
+          if (!subjectHasContent(subject)) return { subject, lesson: null, done: false, sceneProgress: null };
+          const lesson = assignments[subject] || null;
+          const done = lesson ? completed.includes(lesson.kvKey) : false;
+          const sceneProgress =
+            lesson && !done && lesson.hasRevive ? await getSceneProgress(lesson.kvKey) : null;
+          return { subject, lesson, done, sceneProgress };
+        })
+      );
 
       setTasks(built);
     } finally {
@@ -142,7 +147,7 @@ export default function DnesScreen({ navigation }) {
             </Text>
           </View>
         ) : (
-          tasks.map(({ subject, lesson, done }, idx) =>
+          tasks.map(({ subject, lesson, done, sceneProgress }, idx) =>
             lesson ? (
               <TouchableOpacity
                 key={lesson.kvKey}
@@ -158,7 +163,11 @@ export default function DnesScreen({ navigation }) {
                     {subjectLabelOf(subject)}
                   </Text>
                   <Text style={done ? styles.taskSubtitleMuted : styles.taskSubtitle}>
-                    {done ? "Готово" : lesson.title}
+                    {done
+                      ? "Готово"
+                      : sceneProgress
+                      ? `${lesson.title} · сцена ${sceneProgress.sceneIndex + 1}/${sceneProgress.total}`
+                      : lesson.title}
                   </Text>
                 </View>
                 {!done && <Text style={styles.taskArrow}>›</Text>}

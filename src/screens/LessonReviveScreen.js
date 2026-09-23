@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, radius } from "../theme";
+import { getSceneProgress, saveSceneProgress } from "../services/sceneProgress";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 
@@ -33,8 +34,18 @@ export default function LessonReviveScreen({ route, navigation }) {
         });
         const data = await res.json();
         const parsed = data.value ? JSON.parse(data.value) : null;
-        if (!cancelled) {
-          setScenes(parsed && Array.isArray(parsed.reviveScenes) ? parsed.reviveScenes : []);
+        const loadedScenes = parsed && Array.isArray(parsed.reviveScenes) ? parsed.reviveScenes : [];
+        if (cancelled) return;
+        setScenes(loadedScenes);
+
+        // Възстанови позицията на детето, ако вече е гледало този урок преди
+        if (lesson.kvKey && loadedScenes.length > 0) {
+          const saved = await getSceneProgress(lesson.kvKey);
+          if (!cancelled && saved) {
+            const clampedIndex = Math.min(Math.max(saved.sceneIndex || 0, 0), loadedScenes.length - 1);
+            setSceneIndex(clampedIndex);
+            setSceneChoices(saved.choices || {});
+          }
         }
       } catch (e) {
         if (!cancelled) setScenes([]);
@@ -46,6 +57,13 @@ export default function LessonReviveScreen({ route, navigation }) {
       cancelled = true;
     };
   }, [lesson.kvKey]);
+
+  // Записва позицията при всяка промяна (нова сцена или нов избор), за да "Днес" и
+  // самият екран да могат да продължат оттам, откъдето детето е спряло
+  useEffect(() => {
+    if (!lesson.kvKey || !scenes || scenes.length === 0) return;
+    saveSceneProgress(lesson.kvKey, { sceneIndex, total: scenes.length, choices: sceneChoices });
+  }, [lesson.kvKey, scenes, sceneIndex, sceneChoices]);
 
   const selectedChoice = sceneChoices[sceneIndex] || null;
 
