@@ -187,8 +187,11 @@ export default function WelcomeScreen({ navigation }) {
 
   const lessonGroup = (() => {
     const key = `${classVal}_${subject}_${publisher}`;
-    if (kvIndex && kvIndex[key]) return kvIndex[key];
-    return getLessons(classVal, subject, publisher);
+    const group = (kvIndex && kvIndex[key]) || getLessons(classVal, subject, publisher);
+    // Инжектира subject във всеки lesson обект — групите в index-а го знаят (през key-а),
+    // но самите lesson обекти не го носят; нужен е по-надолу за точковия дневник
+    if (!group || !Array.isArray(group.lessons)) return group;
+    return { ...group, lessons: group.lessons.map((l) => ({ ...l, subject })) };
   })();
 
   // Нови полета за ученика

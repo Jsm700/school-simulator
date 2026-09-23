@@ -72,7 +72,7 @@ export default function DnesScreen({ navigation }) {
           ? group.lessons.find((l) => l.kvKey && !completed.includes(l.kvKey))
           : null;
         if (nextLesson) {
-          assignments[subject] = nextLesson;
+          assignments[subject] = { ...nextLesson, subject };
           assignmentsChanged = true;
         }
       }
