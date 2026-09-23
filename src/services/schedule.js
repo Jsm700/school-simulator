@@ -61,7 +61,9 @@ function isoWeekday(date) {
 }
 
 // За всеки предмет в графика смята колко дни остават до следващия му час
-// (0 = днес, 1 = утре, ...). Връща само предметите, чийто час е в прозореца.
+// (1 = утре, 2 = вдругиден, ...). ДНЕШНИЯТ ден (delta=0) умишлено НЕ се брои —
+// часът за днес вече е минал/в момента тече, а екранът е "Предмети за утре",
+// не "Предмети за днес". Връща само предметите, чийто следващ час е в прозореца.
 export function getUpcomingSubjects(schedule, daysAhead = 1, fromDate = new Date()) {
   const todayIso = isoWeekday(fromDate);
   const upcoming = [];
@@ -71,10 +73,10 @@ export function getUpcomingSubjects(schedule, daysAhead = 1, fromDate = new Date
     let minDelta = 8;
     for (const d of days) {
       let delta = d - todayIso;
-      if (delta < 0) delta += 7;
+      if (delta <= 0) delta += 7; // 0 или отрицателно -> пренеси в следващата седмица
       if (delta < minDelta) minDelta = delta;
     }
-    if (minDelta <= daysAhead) {
+    if (minDelta >= 1 && minDelta <= daysAhead) {
       upcoming.push({ subject, daysUntil: minDelta });
     }
   }
