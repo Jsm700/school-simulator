@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
 import { getTotalPoints, resetPoints } from "../services/points";
+import { getLinkedDevice } from "../services/deviceLink";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -103,9 +104,11 @@ export default function WelcomeScreen({ navigation }) {
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [kvIndex, setKvIndex] = useState(null);
   const [totalPoints, setTotalPoints] = useState(0);
+  const [familyCode, setFamilyCode] = useState(null);
 
   React.useEffect(() => {
     fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
+    getLinkedDevice().then((link) => { if (link && link.familyCode) setFamilyCode(link.familyCode); });
   }, []);
 
   const refreshPoints = React.useCallback(() => {
@@ -336,6 +339,12 @@ returnKeyType="done"
         {/* Settings Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>⚙️ Настройки</Text>
+          {familyCode && (
+            <View style={styles.familyCodeBox}>
+              <Text style={styles.familyCodeLabel}>👪 Семеен код</Text>
+              <Text style={styles.familyCodeValue}>{familyCode}</Text>
+            </View>
+          )}
           <Picker
             label="Клас"
             options={CLASS_OPTIONS}
@@ -456,6 +465,13 @@ const styles = StyleSheet.create({
   dnesCardArrow: { fontSize: 20, color: colors.primary },
   scheduleLink: { marginTop: spacing.md, alignItems: "center" },
   resetPointsText: { fontSize: 12, color: "#B23B3B" },
+  familyCodeBox: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    backgroundColor: colors.primaryLight, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.md,
+  },
+  familyCodeLabel: { fontSize: 13, color: colors.primaryDark },
+  familyCodeValue: { fontSize: 16, fontWeight: "700", color: colors.primaryDark, letterSpacing: 2 },
   pointsBadge: {
     backgroundColor: "rgba(255,255,255,0.2)",
     borderRadius: radius.full,
