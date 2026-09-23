@@ -33,6 +33,7 @@ export async function getCurrentChildId() {
   return link && link.role === "child" ? link.childId : null;
 }
 
+export async function unlinkDevice() {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY_LINK);
   } catch (e) {
