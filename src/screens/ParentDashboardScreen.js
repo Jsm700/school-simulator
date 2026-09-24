@@ -14,17 +14,23 @@ const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === v
 
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
+    fetch(`${BACKEND_URL}/children/${childId}/homework?done=false`).then((r) => r.json()).catch(() => []),
   ]);
   return {
     total: pointsRes.total || 0,
     log: pointsRes.log || [],
     completed: progressRes.completed_kv_keys || [],
     todayAssignments: tasksRes.assignments || {},
+    homework: Array.isArray(homeworkRes) ? homeworkRes : [],
   };
+}
+
+async function toggleHomeworkDone(childId, homeworkId) {
+  await fetch(`${BACKEND_URL}/children/${childId}/homework/${homeworkId}/toggle-done`, { method: "POST" });
 }
 
 export default function ParentDashboardScreen() {
@@ -58,6 +64,18 @@ export default function ParentDashboardScreen() {
     if (!selectedId) return;
     setLoadingChild(true);
     fetchChildData(selectedId).then(setChildData).finally(() => setLoadingChild(false));
+  }, [selectedId]);
+
+  const handleToggleHomework = useCallback(async (homeworkId) => {
+    if (!selectedId) return;
+    // Оптимистично премахваме от списъка веднага, после потвърждаваме със сървъра
+    setChildData((prev) => prev && { ...prev, homework: prev.homework.filter((h) => h.id !== homeworkId) });
+    try {
+      await toggleHomeworkDone(selectedId, homeworkId);
+    } catch (e) {
+      console.error("toggle homework error:", e);
+      fetchChildData(selectedId).then(setChildData); // при грешка — презареди истинското състояние
+    }
   }, [selectedId]);
 
   if (loading) {
@@ -130,6 +148,30 @@ export default function ParentDashboardScreen() {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.cardTitle}>📚 Домашни (чакащи)</Text>
+            {childData.homework.length === 0 ? (
+              <Text style={styles.mutedText}>Няма внесени чакащи домашни.</Text>
+            ) : (
+              childData.homework.map((hw) => (
+                <TouchableOpacity
+                  key={hw.id}
+                  style={styles.homeworkRow}
+                  onPress={() => handleToggleHomework(hw.id)}
+                >
+                  <Text style={{ fontSize: 16 }}>⬜</Text>
+                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={styles.taskSubject}>{hw.subject || "(предмет?)"}</Text>
+                      {hw.due_date ? <Text style={styles.mutedText}>срок: {hw.due_date}</Text> : null}
+                    </View>
+                    <Text style={styles.homeworkText}>{hw.task_text}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.cardTitle}>📖 Дневник на точките</Text>
             {childData.log.length === 0 ? (
               <Text style={styles.mutedText}>Още няма записи.</Text>
@@ -183,6 +225,11 @@ const styles = StyleSheet.create({
   taskRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },
   taskSubject: { fontSize: 13, fontWeight: "700", color: colors.text },
   taskTitle: { fontSize: 12, color: colors.muted },
+  homeworkRow: {
+    flexDirection: "row", alignItems: "flex-start", paddingVertical: spacing.sm,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
+  },
+  homeworkText: { fontSize: 13, color: colors.text, marginTop: 2 },
   logRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingVertical: spacing.xs, borderBottomWidth: 0.5, borderBottomColor: colors.border,
