@@ -357,6 +357,12 @@ IMPORT_PAGE_HTML = """<!DOCTYPE html>
   .card { background:#fff; border:1px solid #E8E0D0; border-radius:12px; padding:16px; margin-bottom:16px; }
   .row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee; }
   .muted { color:#888780; font-size:13px; }
+  #pasteZone { border:2px dashed #4A90D9; border-radius:12px; padding:24px; text-align:center; cursor:pointer; margin-bottom:12px; background:#F0F6FC; }
+  #pasteZone:focus { outline:2px solid #4A90D9; }
+  #thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+  #thumbs img { width:70px; height:70px; object-fit:cover; border-radius:8px; border:1px solid #E8E0D0; }
+  .thumbWrap { position:relative; }
+  .thumbWrap button { position:absolute; top:-6px; right:-6px; width:22px; height:22px; padding:0; border-radius:50%; font-size:12px; line-height:1; margin:0; }
   #status { font-size:14px; margin-top:8px; }
 </style>
 </head>
@@ -376,6 +382,9 @@ IMPORT_PAGE_HTML = """<!DOCTYPE html>
 
 <div class="card" id="uploadCard" style="display:none">
   <label>Снимки от Школо (детайлната таблица, не sidebar баджа)</label>
+  <div id="pasteZone" tabindex="0">📋 Кликни тук и натисни <b>Ctrl+V</b>, за да поставиш скрийншот<br><span class="muted">(Win+Shift+S прави снимка директно в clipboard-а — не се налага да я записваш никъде)</span></div>
+  <div id="thumbs"></div>
+  <div class="muted" style="margin:8px 0">— или, ако предпочиташ —</div>
   <input type="file" id="files" accept="image/*" multiple>
   <button onclick="doImport()">Разпознай и внеси</button>
   <div id="status"></div>
@@ -386,6 +395,36 @@ IMPORT_PAGE_HTML = """<!DOCTYPE html>
 <script>
 const BASE = window.location.origin;
 let children = [];
+let pastedImages = []; // data URLs, добавени чрез Ctrl+V
+
+function addThumb(dataUrl) {
+  pastedImages.push(dataUrl);
+  renderThumbs();
+}
+
+function renderThumbs() {
+  const el = document.getElementById('thumbs');
+  el.innerHTML = pastedImages.map((src, i) =>
+    `<div class="thumbWrap"><img src="${src}"><button onclick="removeThumb(${i})">✕</button></div>`
+  ).join('');
+}
+
+function removeThumb(i) {
+  pastedImages.splice(i, 1);
+  renderThumbs();
+}
+
+document.getElementById('pasteZone').addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items || [];
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const blob = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = () => addThumb(reader.result);
+      reader.readAsDataURL(blob);
+    }
+  }
+});
 
 async function loadChildren() {
   const code = document.getElementById('familyCode').value.trim().toUpperCase();
@@ -418,9 +457,10 @@ function fileToDataUrl(file) {
 async function doImport() {
   const childId = document.getElementById('childSelect').value;
   const files = document.getElementById('files').files;
-  if (!files.length) { alert('Избери поне една снимка.'); return; }
+  const fromFiles = await Promise.all(Array.from(files).map(fileToDataUrl));
+  const images = [...pastedImages, ...fromFiles];
+  if (!images.length) { alert('Постни (Ctrl+V) или избери поне една снимка.'); return; }
   document.getElementById('status').textContent = 'Разпознавам... (може да отнеме до минута)';
-  const images = await Promise.all(Array.from(files).map(fileToDataUrl));
   try {
     const res = await fetch(`${BASE}/children/${childId}/homework/import`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -438,6 +478,9 @@ async function doImport() {
       html += `<div class="card"><div class="row"><b>${hw.subject || '(предмет?)'}</b><span class="muted">срок: ${hw.due_date || '?'}</span></div><div>${hw.task_text}</div></div>`;
     }
     results.innerHTML = html;
+    pastedImages = [];
+    renderThumbs();
+    document.getElementById('files').value = '';
   } catch (e) {
     document.getElementById('status').textContent = 'Грешка: ' + e.message;
   }
