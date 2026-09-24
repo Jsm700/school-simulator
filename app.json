@@ -6,9 +6,11 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#000000",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.jsm700.schoolsimulator",
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Нужно е за гласово въвеждане на отговори.",
         "NSMicrophoneUsageDescription": "Нужно е за гласово въвеждане на отговори."
