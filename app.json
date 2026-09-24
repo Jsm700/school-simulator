@@ -18,14 +18,22 @@
       "package": "com.jsm700.schoolsimulator",
       "permissions": [
         "RECORD_AUDIO",
-        "INTERNET"
+        "INTERNET",
+        "CAMERA"
       ]
     },
     "plugins": [
       "expo-font",
       "expo-router",
       "expo-asset",
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Нужен е достъп до снимките, за да прикачиш готово домашно.",
+          "cameraPermission": "Нужен е достъп до камерата, за да снимаш готово домашно."
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -310,6 +310,19 @@ export default function WelcomeScreen({ navigation }) {
           <Text style={styles.dnesCardArrow}>›</Text>
         </TouchableOpacity>
 
+        {/* Домашни entry point */}
+        <TouchableOpacity
+          style={[styles.dnesCard, styles.homeworkCard]}
+          onPress={() => navigation.navigate("Homework", {})}
+        >
+          <Text style={styles.dnesCardIcon}>📚</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.dnesCardTitle}>Домашни</Text>
+            <Text style={styles.dnesCardSubtitle}>Снимай готово домашно за проверка</Text>
+          </View>
+          <Text style={styles.dnesCardArrow}>›</Text>
+        </TouchableOpacity>
+
         {/* Student Card — само ако устройството НЕ е вече свързано като конкретно дете
             (тогава името/полът вече са известни от семейния код) */}
         {!isLinkedChild && (
@@ -477,6 +490,7 @@ const styles = StyleSheet.create({
   dnesCardTitle: { fontSize: 15, fontWeight: "700", color: colors.primaryDark },
   dnesCardSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
   dnesCardArrow: { fontSize: 20, color: colors.primary },
+  homeworkCard: { backgroundColor: colors.successLight, borderColor: colors.success },
   scheduleLink: { marginTop: spacing.md, alignItems: "center" },
   resetPointsText: { fontSize: 12, color: "#B23B3B" },
   familyCodeBox: {

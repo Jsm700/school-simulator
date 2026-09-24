@@ -21,7 +21,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from models import (
     Family, Child, ChildCreate, CompletedLesson, PointsLogEntry,
     AwardPointsRequest, StreakData, SceneProgress, SceneProgressUpdate,
-    WeeklySchedule, DailyTaskSnapshot, HomeworkEntry, HomeworkImportRequest,
+    WeeklySchedule, DailyTaskSnapshot, HomeworkEntry, HomeworkImportRequest, HomeworkCheckRequest,
 )
 
 MONGO_URL = os.environ["MONGO_URL"]
@@ -135,17 +135,10 @@ async def update_streak(child_id: str):
     return streak_points, new_streak
 
 
-@app.get("/children/{child_id}/points")
-async def get_points(child_id: str):
-    log = await db.points_log.find({"child_id": child_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    total = sum(e.get("points", 0) for e in log)
-    return {"total": total, "log": log}
-
-
-@app.post("/children/{child_id}/points/award")
-async def award_points(child_id: str, payload: AwardPointsRequest):
-    safe_total = max(1, payload.topics_total or 1)
-    safe_covered = max(0, min(payload.topics_covered, safe_total))
+async def _award_points(child_id: str, lesson_key: str, subject: str, lesson_title: str,
+                         topics_total: int, topics_covered: int) -> dict:
+    safe_total = max(1, topics_total or 1)
+    safe_covered = max(0, min(topics_covered, safe_total))
     complete = safe_covered >= safe_total
 
     base_points = round((safe_covered / safe_total) * safe_total * POINTS_PER_TOPIC)
@@ -156,9 +149,9 @@ async def award_points(child_id: str, payload: AwardPointsRequest):
     entry = PointsLogEntry(
         child_id=child_id,
         date=today_str(),
-        lesson_key=payload.lesson_key,
-        subject=payload.subject,
-        lesson_title=payload.lesson_title,
+        lesson_key=lesson_key,
+        subject=subject,
+        lesson_title=lesson_title,
         topics_total=safe_total,
         topics_covered=safe_covered,
         complete=complete,
@@ -166,6 +159,21 @@ async def award_points(child_id: str, payload: AwardPointsRequest):
     )
     await db.points_log.insert_one(entry.dict())
     return {**entry.dict(), "current_streak": current_streak}
+
+
+@app.get("/children/{child_id}/points")
+async def get_points(child_id: str):
+    log = await db.points_log.find({"child_id": child_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    total = sum(e.get("points", 0) for e in log)
+    return {"total": total, "log": log}
+
+
+@app.post("/children/{child_id}/points/award")
+async def award_points(child_id: str, payload: AwardPointsRequest):
+    return await _award_points(
+        child_id, payload.lesson_key, payload.subject, payload.lesson_title,
+        payload.topics_total, payload.topics_covered,
+    )
 
 
 @app.post("/children/{child_id}/points/reset")
@@ -338,6 +346,83 @@ async def toggle_homework_done(child_id: str, homework_id: str):
     new_done = not row.get("done", False)
     await db.homework.update_one({"id": homework_id}, {"$set": {"done": new_done}})
     return {"ok": True, "done": new_done}
+
+
+@app.post("/children/{child_id}/homework/{homework_id}/check")
+async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheckRequest):
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(500, "ANTHROPIC_API_KEY не е зададен на сървъра")
+
+    row = await db.homework.find_one({"id": homework_id, "child_id": child_id})
+    if not row:
+        raise HTTPException(404, "Домашното не е намерено")
+
+    subject = row.get("subject", "")
+    task_text = row.get("task_text", "")
+    is_math = "математик" in subject.lower()
+
+    if is_math:
+        instruction = (
+            f"Ти си строг учител по математика. На снимката е показано решение на "
+            f"задача със следния текст от Школо: \"{task_text}\". Провери дали конкретният "
+            f"отговор/решение на снимката е ПРАВИЛЕН. Отговори САМО с валиден JSON от вида "
+            f'{{"passed": true/false, "feedback": "кратко обяснение защо (1-2 изречения, на '
+            f'дете-разбираем език)"}}, без никакъв друг текст."'
+        )
+    else:
+        instruction = (
+            f"Ти си насърчаващ учител. Виждаш снимка на свършено домашно със задача от Школо: "
+            f"\"{task_text}\". Провери САМО дали има реален, смислен опит за решаване — НЕ "
+            f"оценявай почерк, стил или прецизност. Отхвърли само ако страницата е празна, "
+            f"драскулки, или напълно нерелевантна на задачата. Отговори САМО с валиден JSON от "
+            f'вида {{"passed": true/false, "feedback": "кратко насърчително съобщение на '
+            f'дете-разбираем език"}}, без никакъв друг текст.'
+        )
+
+    media_type, b64 = _parse_data_url(payload.image)
+    content = [
+        {"type": "text", "text": instruction},
+        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+    ]
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        res = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 500,
+                "messages": [{"role": "user", "content": content}],
+            },
+        )
+    if res.status_code != 200:
+        raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
+
+    data = res.json()
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(json)?", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+    try:
+        verdict = json.loads(text)
+    except json.JSONDecodeError:
+        raise HTTPException(502, "Не успях да разчета отговора на AI-то")
+
+    passed = bool(verdict.get("passed"))
+    feedback = verdict.get("feedback", "")
+
+    if passed:
+        await db.homework.update_one({"id": homework_id}, {"$set": {"done": True}})
+        points_result = await _award_points(
+            child_id, f"homework_{homework_id}", subject, task_text[:60], 1, 1,
+        )
+        return {"passed": True, "feedback": feedback, "points": points_result["points"]}
+
+    return {"passed": False, "feedback": feedback, "points": 0}
 
 
 # ---------------- Страница за внос (родителят я отваря от компютъра си) ----------------

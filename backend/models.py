@@ -125,3 +125,7 @@ class HomeworkEntry(BaseModel):
 class HomeworkImportRequest(BaseModel):
     images: List[str]  # data URLs (base64), напр. "data:image/png;base64,...."
 
+
+class HomeworkCheckRequest(BaseModel):
+    image: str  # data URL, снимка на готовото домашно
+

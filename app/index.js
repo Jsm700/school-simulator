@@ -32,6 +32,8 @@ export default function Index() {
         router.push({ pathname: "/revive", params: { lesson: JSON.stringify(params.lesson), studentName: params.studentName, studentGender: params.studentGender, studentGrade: params.studentGrade } });
       } else if (screen === "Dnes") {
         router.push({ pathname: "/dnes" });
+      } else if (screen === "Homework") {
+        router.push({ pathname: "/homework" });
       } else if (screen === "ScheduleSettings") {
         router.push({ pathname: "/schedule-settings" });
       }
