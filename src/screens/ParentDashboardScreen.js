@@ -14,11 +14,12 @@ const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === v
 
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes, homeworkRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
     fetch(`${BACKEND_URL}/children/${childId}/homework?done=false`).then((r) => r.json()).catch(() => []),
+    fetch(`${BACKEND_URL}/children/${childId}/homework/stats`).then((r) => r.json()).catch(() => null),
   ]);
   return {
     total: pointsRes.total || 0,
@@ -26,6 +27,7 @@ async function fetchChildData(childId) {
     completed: progressRes.completed_kv_keys || [],
     todayAssignments: tasksRes.assignments || {},
     homework: Array.isArray(homeworkRes) ? homeworkRes : [],
+    homeworkStats: statsRes,
   };
 }
 
@@ -147,6 +149,45 @@ export default function ParentDashboardScreen() {
             )}
           </View>
 
+          {childData.homeworkStats && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>📊 Статистика на домашните</Text>
+              <View style={styles.statsGrid}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statNumber}>{childData.homeworkStats.done_this_week}</Text>
+                  <Text style={styles.statLabel}>тази седмица</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statNumber}>{childData.homeworkStats.done_total}</Text>
+                  <Text style={styles.statLabel}>общо готови</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={[styles.statNumber, childData.homeworkStats.overdue_count > 0 && styles.statNumberWarn]}>
+                    {childData.homeworkStats.overdue_count}
+                  </Text>
+                  <Text style={styles.statLabel}>просрочени</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statNumber}>
+                    {childData.homeworkStats.success_rate_pct != null ? `${childData.homeworkStats.success_rate_pct}%` : "—"}
+                  </Text>
+                  <Text style={styles.statLabel}>успех от 1-ви път</Text>
+                </View>
+              </View>
+              {Object.keys(childData.homeworkStats.by_subject || {}).length > 0 && (
+                <View style={{ marginTop: spacing.md }}>
+                  <Text style={[styles.mutedText, { marginBottom: spacing.xs }]}>По предмет (готови):</Text>
+                  {Object.entries(childData.homeworkStats.by_subject).map(([subj, count]) => (
+                    <View key={subj} style={styles.subjectRow}>
+                      <Text style={styles.taskTitle}>{subj}</Text>
+                      <Text style={styles.taskSubject}>{count}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
           <View style={styles.card}>
             <Text style={styles.cardTitle}>📚 Домашни (чакащи)</Text>
             {childData.homework.length === 0 ? (
@@ -230,6 +271,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   homeworkText: { fontSize: 13, color: colors.text, marginTop: 2 },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  statBox: {
+    flexBasis: "47%", backgroundColor: colors.background, borderRadius: radius.sm,
+    padding: spacing.md, alignItems: "center",
+  },
+  statNumber: { fontSize: 22, fontWeight: "800", color: colors.primaryDark },
+  statNumberWarn: { color: "#B23B3B" },
+  statLabel: { fontSize: 11, color: colors.muted, marginTop: 2, textAlign: "center" },
+  subjectRow: {
+    flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.xs,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
+  },
   logRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingVertical: spacing.xs, borderBottomWidth: 0.5, borderBottomColor: colors.border,
