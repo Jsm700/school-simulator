@@ -107,3 +107,21 @@ class DailyTaskSnapshot(BaseModel):
     child_id: str
     date: str  # YYYY-MM-DD
     assignments: Dict[str, dict] = Field(default_factory=dict)  # subject -> lesson obj
+
+
+# ---------- Домашни (внос от Школо през скрийншоти) ----------
+
+class HomeworkEntry(BaseModel):
+    id: str = Field(default_factory=new_id)
+    child_id: str
+    subject: str = ""
+    date_assigned: str = ""
+    task_text: str = ""
+    due_date: str = ""
+    done: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class HomeworkImportRequest(BaseModel):
+    images: List[str]  # data URLs (base64), напр. "data:image/png;base64,...."
+
