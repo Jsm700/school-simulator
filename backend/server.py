@@ -22,6 +22,7 @@ from models import (
     Family, Child, ChildCreate, CompletedLesson, PointsLogEntry,
     AwardPointsRequest, StreakData, SceneProgress, SceneProgressUpdate,
     WeeklySchedule, DailyTaskSnapshot, HomeworkEntry, HomeworkImportRequest, HomeworkCheckRequest,
+    HomeworkCheckLog,
 )
 
 MONGO_URL = os.environ["MONGO_URL"]
@@ -415,6 +416,13 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
     passed = bool(verdict.get("passed"))
     feedback = verdict.get("feedback", "")
 
+    await db.homework_checks.insert_one(
+        HomeworkCheckLog(
+            child_id=child_id, homework_id=homework_id, subject=subject,
+            passed=passed, feedback=feedback,
+        ).dict()
+    )
+
     if passed:
         await db.homework.update_one({"id": homework_id}, {"$set": {"done": True}})
         points_result = await _award_points(
@@ -423,6 +431,70 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
         return {"passed": True, "feedback": feedback, "points": points_result["points"]}
 
     return {"passed": False, "feedback": feedback, "points": 0}
+
+
+def _try_parse_bg_date(s: str):
+    """Опитва да разчете дата от AI-извлечен текст, най-често DD.MM.YYYY."""
+    for pattern in (r"(\d{1,2})\.(\d{1,2})\.(\d{4})",):
+        m = re.search(pattern, s or "")
+        if m:
+            try:
+                d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                return datetime(y, mo, d)
+            except ValueError:
+                return None
+    return None
+
+
+@app.get("/children/{child_id}/homework/stats")
+async def homework_stats(child_id: str):
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+
+    all_hw = await db.homework.find({"child_id": child_id}, {"_id": 0}).to_list(2000)
+    checks = await db.homework_checks.find({"child_id": child_id}, {"_id": 0}).to_list(4000)
+
+    pending = [h for h in all_hw if not h.get("done")]
+    overdue = 0
+    for h in pending:
+        due = _try_parse_bg_date(h.get("due_date", ""))
+        if due and due.date() < now.date():
+            overdue += 1
+
+    done_this_week = 0
+    for h in all_hw:
+        if not h.get("done"):
+            continue
+        created = h.get("created_at")
+        # created_at е datetime обект от Mongo/pydantic сериализация
+        if isinstance(created, str):
+            try:
+                created = datetime.fromisoformat(created)
+            except ValueError:
+                created = None
+        if created and created >= week_ago:
+            done_this_week += 1
+
+    by_subject = {}
+    for h in all_hw:
+        if not h.get("done"):
+            continue
+        subj = h.get("subject") or "(без предмет)"
+        by_subject[subj] = by_subject.get(subj, 0) + 1
+
+    total_checks = len(checks)
+    passed_checks = sum(1 for c in checks if c.get("passed"))
+    success_rate = round(100 * passed_checks / total_checks) if total_checks else None
+
+    return {
+        "pending_count": len(pending),
+        "overdue_count": overdue,
+        "done_this_week": done_this_week,
+        "done_total": sum(1 for h in all_hw if h.get("done")),
+        "by_subject": by_subject,
+        "success_rate_pct": success_rate,
+        "total_checks": total_checks,
+    }
 
 
 # ---------------- Страница за внос (родителят я отваря от компютъра си) ----------------

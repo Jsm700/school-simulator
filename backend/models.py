@@ -129,3 +129,13 @@ class HomeworkImportRequest(BaseModel):
 class HomeworkCheckRequest(BaseModel):
     image: str  # data URL, снимка на готовото домашно
 
+
+class HomeworkCheckLog(BaseModel):
+    id: str = Field(default_factory=new_id)
+    child_id: str
+    homework_id: str
+    subject: str = ""
+    passed: bool = False
+    feedback: str = ""
+    checked_at: datetime = Field(default_factory=datetime.utcnow)
+
