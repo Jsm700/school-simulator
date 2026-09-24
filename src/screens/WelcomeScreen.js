@@ -284,7 +284,7 @@ export default function WelcomeScreen({ navigation }) {
           <Text style={{ fontSize: 20 }}>🎓</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Елена Пита</Text>
+          <Text style={styles.headerTitle}>Учко</Text>
           <Text style={styles.headerSub}>Изберете урок за изпитване</Text>
         </View>
         <View style={styles.pointsBadge}>
