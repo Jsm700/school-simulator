@@ -108,7 +108,6 @@ export default function WelcomeScreen({ navigation }) {
 
   React.useEffect(() => {
     fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
-    getLinkedDevice().then((link) => { if (link && link.familyCode) setFamilyCode(link.familyCode); });
   }, []);
 
   const refreshPoints = React.useCallback(() => {
@@ -200,6 +199,7 @@ export default function WelcomeScreen({ navigation }) {
   // Нови полета за ученика
   const [studentName, setStudentName] = useState("");
   const [studentGender, setStudentGender] = useState("male");
+  const [isLinkedChild, setIsLinkedChild] = useState(false);
 
   React.useEffect(() => {
     (async () => {
@@ -210,6 +210,17 @@ export default function WelcomeScreen({ navigation }) {
         if (savedGender) setStudentGender(savedGender);
       } catch (e) {
         console.error("AsyncStorage load error:", e);
+      }
+      // Ако устройството вече е свързано като конкретно дете (през семейния код),
+      // името/полът вече са известни от там — не питаме повторно.
+      const link = await getLinkedDevice();
+      if (link && link.role === "child" && link.childName) {
+        setStudentName(link.childName);
+        setStudentGender(link.childGender || "male");
+        setIsLinkedChild(true);
+        if (link.familyCode) setFamilyCode(link.familyCode);
+      } else if (link && link.familyCode) {
+        setFamilyCode(link.familyCode);
       }
     })();
   }, []);
@@ -299,42 +310,45 @@ export default function WelcomeScreen({ navigation }) {
           <Text style={styles.dnesCardArrow}>›</Text>
         </TouchableOpacity>
 
-        {/* Student Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>👤 За ученика</Text>
+        {/* Student Card — само ако устройството НЕ е вече свързано като конкретно дете
+            (тогава името/полът вече са известни от семейния код) */}
+        {!isLinkedChild && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>👤 За ученика</Text>
 
-          <Text style={styles.pickerLabel}>Име</Text>
-          <TextInput
-            style={styles.nameInput}
-            value={studentName}
-            onChangeText={updateStudentName}
-            placeholder="Напр. Иван или Мария"
-            placeholderTextColor={colors.muted}
-            maxLength={30}
+            <Text style={styles.pickerLabel}>Име</Text>
+            <TextInput
+              style={styles.nameInput}
+              value={studentName}
+              onChangeText={updateStudentName}
+              placeholder="Напр. Иван или Мария"
+              placeholderTextColor={colors.muted}
+              maxLength={30}
 blurOnSubmit={false}
 returnKeyType="done"
-          />
+            />
 
-          <Text style={[styles.pickerLabel, { marginTop: spacing.md }]}>Пол</Text>
-          <View style={styles.genderRow}>
-            <TouchableOpacity
-              style={[styles.genderBtn, studentGender === "male" && styles.genderBtnActive]}
-              onPress={() => updateStudentGender("male")}
-            >
-              <Text style={[styles.genderText, studentGender === "male" && styles.genderTextActive]}>
-                👦 Момче
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.genderBtn, studentGender === "female" && styles.genderBtnActive]}
-              onPress={() => updateStudentGender("female")}
-            >
-              <Text style={[styles.genderText, studentGender === "female" && styles.genderTextActive]}>
-                👧 Момиче
-              </Text>
-            </TouchableOpacity>
+            <Text style={[styles.pickerLabel, { marginTop: spacing.md }]}>Пол</Text>
+            <View style={styles.genderRow}>
+              <TouchableOpacity
+                style={[styles.genderBtn, studentGender === "male" && styles.genderBtnActive]}
+                onPress={() => updateStudentGender("male")}
+              >
+                <Text style={[styles.genderText, studentGender === "male" && styles.genderTextActive]}>
+                  👦 Момче
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.genderBtn, studentGender === "female" && styles.genderBtnActive]}
+                onPress={() => updateStudentGender("female")}
+              >
+                <Text style={[styles.genderText, studentGender === "female" && styles.genderTextActive]}>
+                  👧 Момиче
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Settings Card */}
         <View style={styles.card}>
