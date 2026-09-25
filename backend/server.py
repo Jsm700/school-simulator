@@ -257,6 +257,11 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
             "date_assigned (датата на задаване, както е показана), "
             "task_text (пълния текст на домашното), "
             "due_date (срокът, както е показан). "
+            "ВАЖНО за task_text: ако текстът съдържа кавички от какъвто и да е вид "
+            "(„...\u201c, ,,...\u201c, \"...\", «...» и т.н.), ПРЕМАХНИ ги напълно от "
+            "task_text — не ги възпроизвеждай изобщо, дори като единични кавички. "
+            "Никога не слагай символа \" (права кавичка) никъде вътре в стойността на "
+            "task_text — той ще счупи JSON формата. "
             "Върни САМО валиден JSON масив от обекти с тези 4 полета, без никакъв друг текст, "
             "без markdown, без обяснения. Ако не намериш нито един ред, върни []."
         ),
@@ -292,6 +297,11 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
     if text.startswith("```"):
         text = re.sub(r"^```(json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
+    # Защита: типографски кавички (българските „...“ / ,,...“ / «...») чупят JSON,
+    # ако AI-то ги е преписало буквално въпреки инструкцията — сменяме ги превантивно.
+    text = text.translate(str.maketrans({
+        "\u201e": "'", "\u201c": "'", "\u201d": "'", "\u00ab": "'", "\u00bb": "'",
+    }))
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as e:
