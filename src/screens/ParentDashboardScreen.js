@@ -4,7 +4,7 @@
 // семейството и вижда точки, дневник, и статуса на днешните задачи за всяко.
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, radius } from "../theme";
 import { getLinkedDevice, listChildren, BACKEND_URL } from "../services/deviceLink";
@@ -102,6 +102,9 @@ export default function ParentDashboardScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>👪 Родителски изглед</Text>
+        <TouchableOpacity onPress={() => Linking.openURL(`${BACKEND_URL}/import`)}>
+          <Text style={styles.importLink}>📷 Импортирай домашни от Школо (отваря се в браузъра)</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.childSwitcher}>
@@ -245,6 +248,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, color: colors.muted, textAlign: "center" },
   header: { padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
   headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
+  importLink: { fontSize: 13, color: colors.primary, marginTop: spacing.xs },
   childSwitcher: {
     flexDirection: "row", flexWrap: "wrap", gap: spacing.sm,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
