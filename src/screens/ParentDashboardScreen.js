@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { getLinkedDevice, listChildren, BACKEND_URL } from "../services/deviceLink";
 import { ALL_SCHOOL_SUBJECTS } from "../services/schedule";
@@ -36,6 +37,7 @@ async function toggleHomeworkDone(childId, homeworkId) {
 }
 
 export default function ParentDashboardScreen() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [children, setChildren] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -120,6 +122,20 @@ export default function ParentDashboardScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {selectedChild && (
+        <TouchableOpacity
+          style={styles.scheduleLink}
+          onPress={() =>
+            router.push({
+              pathname: "/schedule-settings",
+              params: { childId: selectedChild.id, childName: selectedChild.name },
+            })
+          }
+        >
+          <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график — {selectedChild.name}</Text>
+        </TouchableOpacity>
+      )}
 
       {loadingChild || !childData ? (
         <View style={styles.center}>
@@ -249,6 +265,8 @@ const styles = StyleSheet.create({
   header: { padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
   headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
   importLink: { fontSize: 13, color: colors.primary, marginTop: spacing.xs },
+  scheduleLink: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  scheduleLinkText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
   childSwitcher: {
     flexDirection: "row", flexWrap: "wrap", gap: spacing.sm,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,

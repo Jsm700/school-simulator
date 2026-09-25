@@ -33,8 +33,8 @@ export const WEEKDAY_LABELS = [
   { value: 5, label: "Пет" },
 ];
 
-export async function getSchedule() {
-  const childId = await getCurrentChildId();
+export async function getSchedule(childIdOverride) {
+  const childId = childIdOverride || (await getCurrentChildId());
   if (!childId) return {};
   try {
     const res = await fetch(`${BACKEND_URL}/children/${childId}/schedule`);
@@ -45,8 +45,8 @@ export async function getSchedule() {
   }
 }
 
-export async function setSchedule(schedule) {
-  const childId = await getCurrentChildId();
+export async function setSchedule(schedule, childIdOverride) {
+  const childId = childIdOverride || (await getCurrentChildId());
   if (!childId) return;
   try {
     await fetch(`${BACKEND_URL}/children/${childId}/schedule`, {

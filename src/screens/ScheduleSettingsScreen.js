@@ -5,16 +5,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { getSchedule, setSchedule as saveSchedule, WEEKDAY_LABELS, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { colors, spacing, radius } from "../theme";
 
-export default function ScheduleSettingsScreen({ navigation }) {
+export default function ScheduleSettingsScreen({ navigation, route }) {
+  const childId = route?.params?.childId || null;
+  const childName = route?.params?.childName || null;
   const [schedule, setScheduleState] = useState({});
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    getSchedule().then((s) => {
+    getSchedule(childId).then((s) => {
       setScheduleState(s);
       setLoaded(true);
     });
-  }, []);
+  }, [childId]);
 
   const toggleDay = useCallback((subjectValue, dayValue) => {
     setScheduleState((prev) => {
@@ -22,10 +24,10 @@ export default function ScheduleSettingsScreen({ navigation }) {
       const has = current.includes(dayValue);
       const updated = has ? current.filter((d) => d !== dayValue) : [...current, dayValue];
       const next = { ...prev, [subjectValue]: updated };
-      saveSchedule(next);
+      saveSchedule(next, childId);
       return next;
     });
-  }, []);
+  }, [childId]);
 
   if (!loaded) return <SafeAreaView style={styles.container} />;
 
@@ -35,7 +37,9 @@ export default function ScheduleSettingsScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backBtn}>‹ Назад</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Седмичен график</Text>
+        <Text style={styles.headerTitle}>
+          Седмичен график{childName ? ` — ${childName}` : ""}
+        </Text>
       </View>
       <Text style={styles.hint}>
         Отбележи кои дни има детето час по всеки предмет в училище. Предметите с
