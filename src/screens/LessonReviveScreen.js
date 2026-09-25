@@ -156,8 +156,11 @@ export default function LessonReviveScreen({ route, navigation }) {
         setDoneTerms((prev) => new Set(prev).add(term));
         setNotebookPhoto(null);
         if (data.passed) {
-          const bonusNote = data.has_bonus ? " (+ бонус за собствено обяснение!)" : "";
-          Alert.alert("✅ Прието!", `${data.feedback}\n\n+${data.points} точки${bonusNote}`);
+          const extras = [];
+          if (data.has_bonus) extras.push("+ бонус за собствено обяснение!");
+          if (data.is_jackpot) extras.push("🎰 ДЖАКПОТ — двойни точки!");
+          if (data.same_day_bonus > 0) extras.push(`🔁 +${data.same_day_bonus} за връщане пак днес`);
+          Alert.alert("✅ Прието!", `${data.feedback}\n\n+${data.points} точки${extras.length ? `\n${extras.join(" · ")}` : ""}`);
         }
       } else {
         Alert.alert("Опитай пак", data.feedback || "Не изглежда напълно готово — провери и пробвай пак.");
@@ -190,6 +193,8 @@ export default function LessonReviveScreen({ route, navigation }) {
   }
 
   const isLastScene = sceneIndex === scenes.length - 1;
+  const scenesRemaining = scenes.length - sceneIndex; // включва текущата
+  const almostDone = !isLastScene && scenesRemaining <= 2;
   const scene = scenes[sceneIndex];
 
   return (
@@ -274,11 +279,17 @@ export default function LessonReviveScreen({ route, navigation }) {
 
         {selectedChoice && (
           <TouchableOpacity
-            style={styles.nextBtn}
+            style={[styles.nextBtn, almostDone && styles.nextBtnAlmostDone]}
             onPress={isLastScene ? handleGoToExam : handleNext}
           >
             <Text style={styles.nextBtnText}>
-              {isLastScene ? "Готов съм за изпит" : "Напред"}
+              {isLastScene
+                ? "Готов съм за изпит"
+                : almostDone
+                ? scenesRemaining - 1 === 1
+                  ? "Последна сцена след тази! 🔥"
+                  : `Само ${scenesRemaining - 1} сцени до края! 🔥`
+                : "Напред"}
             </Text>
           </TouchableOpacity>
         )}
@@ -336,6 +347,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   nextBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  nextBtnAlmostDone: { backgroundColor: colors.warning },
   notebookBox: {
     backgroundColor: colors.successLight, borderRadius: radius.md,
     padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.success,

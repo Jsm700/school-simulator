@@ -351,9 +351,13 @@ export default function QuizScreen({ navigation }) {
               topicsTotal,
               topicsCovered,
             });
+            const extras = [];
+            if (result.isJackpot) extras.push("🎰 ДЖАКПОТ — двойни точки!");
+            if (result.sameDayBonus > 0) extras.push(`🔁 +${result.sameDayBonus} за връщане пак днес`);
+            if (result.currentStreak > 1) extras.push(`стрийк: ${result.currentStreak} дни`);
             Alert.alert(
               "Браво! 🎉",
-              `Спечели ${result.points} точки${result.currentStreak > 1 ? ` (стрийк: ${result.currentStreak} дни)` : ""}.`,
+              `Спечели ${result.points} точки${extras.length ? `\n${extras.join(" · ")}` : ""}.`,
               [{ text: "Супер", onPress: () => navigation.goBack() }]
             );
           },

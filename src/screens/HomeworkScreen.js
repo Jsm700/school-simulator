@@ -72,7 +72,10 @@ export default function HomeworkScreen({ navigation }) {
       );
       const data = await res.json();
       if (data.passed) {
-        Alert.alert("✅ Прието!", `${data.feedback}\n\n+${data.points} точки`, [
+        const extras = [];
+        if (data.is_jackpot) extras.push("🎰 ДЖАКПОТ — двойни точки!");
+        if (data.same_day_bonus > 0) extras.push(`🔁 +${data.same_day_bonus} за връщане пак днес`);
+        Alert.alert("✅ Прието!", `${data.feedback}\n\n+${data.points} точки${extras.length ? `\n${extras.join(" · ")}` : ""}`, [
           { text: "Супер", onPress: () => { setSelected(null); setPhotoUri(null); setPhotoBase64(null); load(); } },
         ]);
       } else {

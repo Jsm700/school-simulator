@@ -47,7 +47,12 @@ export async function awardLessonPoints({ lessonKey, subject, lessonTitle, topic
       }),
     });
     const data = await res.json();
-    return { ...data, currentStreak: data.current_streak };
+    return {
+      ...data,
+      currentStreak: data.current_streak,
+      sameDayBonus: data.same_day_bonus,
+      isJackpot: data.is_jackpot,
+    };
   } catch (e) {
     console.error("points.awardLessonPoints error:", e);
     return { points: 0, currentStreak: 0 };

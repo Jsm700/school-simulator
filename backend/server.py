@@ -37,10 +37,15 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-POINTS_PER_TOPIC = 10
+POINTS_PER_TOPIC_MIN = 8
+POINTS_PER_TOPIC_MAX = 15
+JACKPOT_CHANCE = 0.08  # ~1 на 12-13 пъти
+JACKPOT_MULTIPLIER = 2
 COMPLETION_BONUS = 5
 STREAK_POINTS_PER_DAY = 2
 STREAK_MAX_BONUS = 20
+SAME_DAY_SESSION_GAP_MINUTES = 20  # след толкова неактивност, връщане = нова "сесия"
+SAME_DAY_RETURN_BONUS = 5
 
 
 def today_str() -> str:
@@ -117,23 +122,54 @@ async def mark_completed(child_id: str, kv_key: str):
 # ---------------- Points ----------------
 
 async def update_streak(child_id: str):
+    """Връща (streak_points, current_streak, same_day_bonus, is_jackpot).
+    streak_points — междудневен бонус (само първия път всеки ден).
+    same_day_bonus — малък бонус, ако детето се връща за НОВА сесия същия ден
+    (пауза ≥ SAME_DAY_SESSION_GAP_MINUTES от последната активност).
+    is_jackpot — рядък 2х множител, приложен от викащата функция.
+    """
+    now = datetime.utcnow()
     today = today_str()
     streak = await db.streaks.find_one({"child_id": child_id})
-    if streak and streak.get("last_active_date") == today:
-        return 0, streak.get("current_streak", 0)
 
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    prev_streak = streak.get("current_streak", 0) if streak else 0
-    prev_date = streak.get("last_active_date") if streak else None
-    new_streak = prev_streak + 1 if prev_date == yesterday else 1
+    last_active_date = streak.get("last_active_date") if streak else None
+    last_activity_raw = streak.get("last_activity_at") if streak else None
+    last_activity_at = None
+    if isinstance(last_activity_raw, str):
+        try:
+            last_activity_at = datetime.fromisoformat(last_activity_raw)
+        except ValueError:
+            last_activity_at = None
+    elif isinstance(last_activity_raw, datetime):
+        last_activity_at = last_activity_raw
+
+    is_jackpot = random.random() < JACKPOT_CHANCE
+
+    if last_active_date == today:
+        # вече е бил активен днес — само проверяваме дали е НОВА сесия (връщане)
+        same_day_bonus = 0
+        if last_activity_at:
+            gap_minutes = (now - last_activity_at).total_seconds() / 60
+            if gap_minutes >= SAME_DAY_SESSION_GAP_MINUTES:
+                same_day_bonus = SAME_DAY_RETURN_BONUS
+        new_streak = streak.get("current_streak", 0)
+        streak_points = 0
+    else:
+        yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        prev_streak = streak.get("current_streak", 0) if streak else 0
+        new_streak = prev_streak + 1 if last_active_date == yesterday else 1
+        streak_points = min(new_streak * STREAK_POINTS_PER_DAY, STREAK_MAX_BONUS)
+        same_day_bonus = 0
 
     await db.streaks.update_one(
         {"child_id": child_id},
-        {"$set": {"child_id": child_id, "last_active_date": today, "current_streak": new_streak}},
+        {"$set": {
+            "child_id": child_id, "last_active_date": today, "current_streak": new_streak,
+            "last_activity_at": now.isoformat(),
+        }},
         upsert=True,
     )
-    streak_points = min(new_streak * STREAK_POINTS_PER_DAY, STREAK_MAX_BONUS)
-    return streak_points, new_streak
+    return streak_points, new_streak, same_day_bonus, is_jackpot
 
 
 async def _award_points(child_id: str, lesson_key: str, subject: str, lesson_title: str,
@@ -142,10 +178,16 @@ async def _award_points(child_id: str, lesson_key: str, subject: str, lesson_tit
     safe_covered = max(0, min(topics_covered, safe_total))
     complete = safe_covered >= safe_total
 
-    base_points = round((safe_covered / safe_total) * safe_total * POINTS_PER_TOPIC)
+    # Променлива награда: случайна стойност на тема вместо фиксирана — предвидимата
+    # награда губи стимулиращата си сила бързо, особено при СДВХ (виж lesson-livening-brainstorm)
+    base_points = sum(random.randint(POINTS_PER_TOPIC_MIN, POINTS_PER_TOPIC_MAX) for _ in range(safe_covered))
     bonus = COMPLETION_BONUS if complete else 0
-    streak_points, current_streak = await update_streak(child_id)
-    total_points = base_points + bonus + streak_points
+    streak_points, current_streak, same_day_bonus, is_jackpot = await update_streak(child_id)
+
+    subtotal = base_points + bonus
+    if is_jackpot:
+        subtotal *= JACKPOT_MULTIPLIER
+    total_points = subtotal + streak_points + same_day_bonus
 
     entry = PointsLogEntry(
         child_id=child_id,
@@ -159,14 +201,21 @@ async def _award_points(child_id: str, lesson_key: str, subject: str, lesson_tit
         points=total_points,
     )
     await db.points_log.insert_one(entry.dict())
-    return {**entry.dict(), "current_streak": current_streak}
+    return {
+        **entry.dict(), "current_streak": current_streak,
+        "same_day_bonus": same_day_bonus, "is_jackpot": is_jackpot,
+    }
 
 
 async def _award_fixed_points(child_id: str, lesson_key: str, subject: str, lesson_title: str,
                                points: int) -> dict:
-    """За източници с фиксирана стойност (тетрадка), не топик-базирана формула."""
-    streak_points, current_streak = await update_streak(child_id)
-    total_points = points + streak_points
+    """За източници с фиксирана базова стойност (тетрадка, домашни) — самата база не
+    варира (вече обмислена отделно, напр. 20/термин), но jackpot/same-day бонусите
+    важат еднакво за всички източници на точки."""
+    streak_points, current_streak, same_day_bonus, is_jackpot = await update_streak(child_id)
+
+    subtotal = points * JACKPOT_MULTIPLIER if is_jackpot else points
+    total_points = subtotal + streak_points + same_day_bonus
 
     entry = PointsLogEntry(
         child_id=child_id,
@@ -180,7 +229,10 @@ async def _award_fixed_points(child_id: str, lesson_key: str, subject: str, less
         points=total_points,
     )
     await db.points_log.insert_one(entry.dict())
-    return {**entry.dict(), "current_streak": current_streak}
+    return {
+        **entry.dict(), "current_streak": current_streak,
+        "same_day_bonus": same_day_bonus, "is_jackpot": is_jackpot,
+    }
 
 
 @app.get("/children/{child_id}/points")
@@ -255,6 +307,33 @@ async def save_daily_tasks(child_id: str, payload: dict):
     )
     return {"ok": True}
 
+
+# ---------------- Дневна "батерия" — реално прекарано време ----------------
+
+DAILY_GOAL_MINUTES = 120  # 2 часа — целта, обсъдена в linia "Фокус"
+
+
+@app.post("/children/{child_id}/activity")
+async def log_activity(child_id: str, payload: dict):
+    minutes = max(0, float(payload.get("minutes", 0)))
+    if minutes <= 0:
+        return {"ok": True, "total_minutes": None}
+    date = today_str()
+    await db.activity_log.update_one(
+        {"child_id": child_id, "date": date},
+        {"$inc": {"total_minutes": minutes}, "$set": {"child_id": child_id, "date": date}},
+        upsert=True,
+    )
+    row = await db.activity_log.find_one({"child_id": child_id, "date": date}, {"_id": 0})
+    return {"ok": True, "total_minutes": row.get("total_minutes", 0) if row else minutes}
+
+
+@app.get("/children/{child_id}/activity/today")
+async def get_activity_today(child_id: str):
+    date = today_str()
+    row = await db.activity_log.find_one({"child_id": child_id, "date": date}, {"_id": 0})
+    total = row.get("total_minutes", 0) if row else 0
+    return {"date": date, "total_minutes": total, "goal_minutes": DAILY_GOAL_MINUTES}
 
 # ---------------- Домашни (внос от Школо) ----------------
 
@@ -476,7 +555,10 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
         points_result = await _award_points(
             child_id, f"homework_{homework_id}", subject, task_text[:60], 1, 1,
         )
-        return {"passed": True, "feedback": feedback, "points": points_result["points"]}
+        return {
+            "passed": True, "feedback": feedback, "points": points_result["points"],
+            "is_jackpot": points_result["is_jackpot"], "same_day_bonus": points_result["same_day_bonus"],
+        }
 
     return {"passed": False, "feedback": feedback, "points": 0}
 
@@ -638,7 +720,10 @@ async def check_notebook(child_id: str, payload: NotebookCheckRequest):
     points_result = await _award_fixed_points(
         child_id, f"notebook_{payload.kv_key}_{payload.term}", "", payload.term, points_value,
     )
-    return {"passed": True, "has_bonus": has_bonus, "feedback": feedback, "points": points_result["points"]}
+    return {
+        "passed": True, "has_bonus": has_bonus, "feedback": feedback, "points": points_result["points"],
+        "is_jackpot": points_result["is_jackpot"], "same_day_bonus": points_result["same_day_bonus"],
+    }
 
 
 # ---------------- Страница за внос (родителят я отваря от компютъра си) ----------------
