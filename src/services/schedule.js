@@ -88,3 +88,18 @@ export function getUpcomingSubjects(schedule, daysAhead = 1, fromDate = new Date
   upcoming.sort((a, b) => a.daysUntil - b.daysUntil);
   return upcoming;
 }
+
+// Предметите, които имат час на ТОЧНО тази дата по седмичния график (само по
+// ден от седмицата — не пази конкретни дати, само повтарящ се шаблон). За
+// "Днес" екрана с избираема дата — детето/родителят решават коя дата да
+// разгледат (напр. събота без час все пак може да е учебен ден за подготовка).
+export function getSubjectsForDate(schedule, date) {
+  const targetIso = isoWeekday(date);
+  const subjects = [];
+  for (const [subject, days] of Object.entries(schedule)) {
+    if (Array.isArray(days) && days.includes(targetIso)) {
+      subjects.push(subject);
+    }
+  }
+  return subjects;
+}

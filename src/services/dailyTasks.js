@@ -1,29 +1,29 @@
 // src/services/dailyTasks.js
-// "Днес" показва ФИКСИРАНА снимка на задачите за текущия календарен ден. От
-// 2026-09-23 снимката се пази в backend-а (per child_id), не локално — датата
-// е ключ на самия backend endpoint, така че нов календарен ден автоматично
-// не намира вчерашната снимка, без клиентска логика за това.
+// Фиксирана снимка на задачите за ЕДИН КОНКРЕТЕН календарен ден. Първоначално
+// беше само "днес", но "Днес" екранът вече позволява избор на дата напред
+// (2026-09-25) — детето/родителят решават коя дата да подготвят, не винаги
+// точно утре. Снимката се пази в backend-а (per child_id), ключувана по дата.
 import { BACKEND_URL, getCurrentChildId } from "./deviceLink";
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+export function dateToStr(date) {
+  return date.toISOString().slice(0, 10);
 }
 
-export async function getTodaySnapshot() {
+export async function getSnapshotForDate(date) {
   const childId = await getCurrentChildId();
   if (!childId) return null;
   try {
-    const res = await fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${todayStr()}`);
+    const res = await fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${dateToStr(date)}`);
     const data = await res.json();
     return data; // {child_id, date, assignments} — assignments може да е {} ако още няма снимка
   } catch (e) {
-    console.error("dailyTasks.getTodaySnapshot error:", e);
+    console.error("dailyTasks.getSnapshotForDate error:", e);
     return null;
   }
 }
 
-export async function saveTodaySnapshot(assignments) {
-  const snapshot = { date: todayStr(), assignments };
+export async function saveSnapshotForDate(date, assignments) {
+  const snapshot = { date: dateToStr(date), assignments };
   const childId = await getCurrentChildId();
   if (childId) {
     try {
@@ -33,7 +33,7 @@ export async function saveTodaySnapshot(assignments) {
         body: JSON.stringify(snapshot),
       });
     } catch (e) {
-      console.error("dailyTasks.saveTodaySnapshot error:", e);
+      console.error("dailyTasks.saveSnapshotForDate error:", e);
     }
   }
   return snapshot;

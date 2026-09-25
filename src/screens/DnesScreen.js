@@ -4,13 +4,39 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLessons } from "../data/lessons";
-import { getSchedule, getUpcomingSubjects, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
+import { getSchedule, getSubjectsForDate, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { getCompletedLessons } from "../services/progress";
-import { getTodaySnapshot, saveTodaySnapshot } from "../services/dailyTasks";
+import { getSnapshotForDate, saveSnapshotForDate } from "../services/dailyTasks";
 import { getSceneProgress } from "../services/sceneProgress";
 import { colors, spacing, radius } from "../theme";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
+
+const WEEKDAY_FULL = ["Пон", "Вт", "Ср", "Чет", "Пет", "Съб", "Нед"]; // индекс 0=Пон
+
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function isToday(date) {
+  const now = new Date();
+  return date.toDateString() === now.toDateString();
+}
+
+function isTomorrow(date) {
+  return date.toDateString() === addDays(new Date(), 1).toDateString();
+}
+
+function formatDateLabel(date) {
+  const weekday = WEEKDAY_FULL[(date.getDay() + 6) % 7]; // getDay: 0=Нед -> искаме 0=Пон
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  if (isToday(date)) return `Днес, ${weekday} ${dd}.${mm}`;
+  if (isTomorrow(date)) return `Утре, ${weekday} ${dd}.${mm}`;
+  return `${weekday}, ${dd}.${mm}`;
+}
 
 async function fetchIndex() {
   try {
@@ -31,6 +57,7 @@ const subjectHasContent = (value) => !!(ALL_SCHOOL_SUBJECTS.find((s) => s.value 
 
 export default function DnesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(() => addDays(new Date(), 1)); // по подразбиране: утре, както преди
   const [tasks, setTasks] = useState([]); // [{ subject, lesson }]
   const [studentInfo, setStudentInfo] = useState({ name: "Тони", gender: "male", classVal: "4" });
 
@@ -46,7 +73,7 @@ export default function DnesScreen({ navigation }) {
           AsyncStorage.getItem("student_gender"),
           AsyncStorage.getItem("last_class"),
           AsyncStorage.getItem("subject_publisher_map"),
-          getTodaySnapshot(),
+          getSnapshotForDate(selectedDate),
         ]);
 
       const classVal = savedClass || "4";
@@ -57,13 +84,13 @@ export default function DnesScreen({ navigation }) {
         classVal,
       });
 
-      const upcoming = getUpcomingSubjects(schedule, 1);
+      const subjectsForDay = getSubjectsForDate(schedule, selectedDate);
       const assignments = { ...(snapshot ? snapshot.assignments : {}) };
       let assignmentsChanged = false;
 
-      for (const { subject } of upcoming) {
+      for (const subject of subjectsForDay) {
         if (!subjectHasContent(subject)) continue; // информативните редове не се "заключват" за деня
-        if (assignments[subject]) continue; // вече има фиксирана задача за днес за този предмет
+        if (assignments[subject]) continue; // вече има фиксирана задача за тази дата за този предмет
 
         const publisher = publisherMap[subject] || "klett";
         const key = `${classVal}_${subject}_${publisher}`;
@@ -78,11 +105,11 @@ export default function DnesScreen({ navigation }) {
       }
 
       if (assignmentsChanged || !snapshot) {
-        await saveTodaySnapshot(assignments);
+        await saveSnapshotForDate(selectedDate, assignments);
       }
 
       const built = await Promise.all(
-        upcoming.map(async ({ subject }) => {
+        subjectsForDay.map(async (subject) => {
           if (!subjectHasContent(subject)) return { subject, lesson: null, done: false, sceneProgress: null };
           const lesson = assignments[subject] || null;
           const done = lesson ? completed.includes(lesson.kvKey) : false;
@@ -96,7 +123,7 @@ export default function DnesScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => {
     load();
@@ -119,73 +146,87 @@ export default function DnesScreen({ navigation }) {
     [navigation, studentInfo]
   );
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Предмети за утре</Text>
+        <View style={styles.dateNav}>
+          <TouchableOpacity
+            style={styles.dateNavBtn}
+            onPress={() => setSelectedDate((d) => addDays(d, -1))}
+            disabled={isToday(selectedDate) || loading}
+          >
+            <Text style={[styles.dateNavArrow, (isToday(selectedDate) || loading) && styles.dateNavArrowDisabled]}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{formatDateLabel(selectedDate)}</Text>
+          <TouchableOpacity
+            style={styles.dateNavBtn}
+            onPress={() => setSelectedDate((d) => addDays(d, 1))}
+            disabled={loading}
+          >
+            <Text style={styles.dateNavArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.headerSubtitle}>
           {tasks.length > 0
             ? `${tasks.filter((t) => t.done).length} от ${tasks.filter((t) => t.lesson).length} задачи готови`
-            : "Нищо не предстои в графика"}
+            : "Нищо не предстои в графика за тази дата"}
         </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        {tasks.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>
-              Или графикът е празен, или всичко предстоящо вече е завършено. Провери
-              настройките на графика, или разгледай всички уроци директно.
-            </Text>
-          </View>
-        ) : (
-          tasks.map(({ subject, lesson, done, sceneProgress }, idx) =>
-            lesson ? (
-              <TouchableOpacity
-                key={lesson.kvKey}
-                style={[styles.taskRow, done && styles.taskRowDone]}
-                onPress={() => (done ? null : openLesson(lesson))}
-                disabled={done}
-              >
-                <View style={[styles.taskIcon, done && styles.taskIconDone]}>
-                  <Text style={{ fontSize: 16 }}>{done ? "✅" : "📘"}</Text>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+          {tasks.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>
+                Или графикът е празен за тази дата, или всичко вече е завършено. Пробвай
+                следващ ден със стрелката горе, или разгледай всички уроци директно.
+              </Text>
+            </View>
+          ) : (
+            tasks.map(({ subject, lesson, done, sceneProgress }, idx) =>
+              lesson ? (
+                <TouchableOpacity
+                  key={lesson.kvKey}
+                  style={[styles.taskRow, done && styles.taskRowDone]}
+                  onPress={() => (done ? null : openLesson(lesson))}
+                  disabled={done}
+                >
+                  <View style={[styles.taskIcon, done && styles.taskIconDone]}>
+                    <Text style={{ fontSize: 16 }}>{done ? "✅" : "📘"}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.taskTitle, done && styles.taskTitleDone]}>
+                      {subjectLabelOf(subject)}
+                    </Text>
+                    <Text style={done ? styles.taskSubtitleMuted : styles.taskSubtitle}>
+                      {done
+                        ? "Готово"
+                        : sceneProgress
+                        ? `${lesson.title} · сцена ${sceneProgress.sceneIndex + 1}/${sceneProgress.total}`
+                        : lesson.title}
+                    </Text>
+                  </View>
+                  {!done && <Text style={styles.taskArrow}>›</Text>}
+                </TouchableOpacity>
+              ) : (
+                <View key={`info-${subject}-${idx}`} style={[styles.taskRow, styles.taskRowInfo]}>
+                  <View style={styles.taskIcon}>
+                    <Text style={{ fontSize: 16 }}>🗓️</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.taskTitle}>{subjectLabelOf(subject)}</Text>
+                    <Text style={styles.taskSubtitleMuted}>Предстои — все още няма уроци тук</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.taskTitle, done && styles.taskTitleDone]}>
-                    {subjectLabelOf(subject)}
-                  </Text>
-                  <Text style={done ? styles.taskSubtitleMuted : styles.taskSubtitle}>
-                    {done
-                      ? "Готово"
-                      : sceneProgress
-                      ? `${lesson.title} · сцена ${sceneProgress.sceneIndex + 1}/${sceneProgress.total}`
-                      : lesson.title}
-                  </Text>
-                </View>
-                {!done && <Text style={styles.taskArrow}>›</Text>}
-              </TouchableOpacity>
-            ) : (
-              <View key={`info-${subject}-${idx}`} style={[styles.taskRow, styles.taskRowInfo]}>
-                <View style={styles.taskIcon}>
-                  <Text style={{ fontSize: 16 }}>🗓️</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.taskTitle}>{subjectLabelOf(subject)}</Text>
-                  <Text style={styles.taskSubtitleMuted}>Предстои — все още няма уроци тук</Text>
-                </View>
-              </View>
+              )
             )
-          )
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      )}
 
       <View style={styles.footer}>
         {(() => {
@@ -206,10 +247,14 @@ export default function DnesScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: { padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
-  headerSubtitle: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  dateNav: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  dateNavBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  dateNavArrow: { fontSize: 22, color: colors.primary, fontWeight: "700" },
+  dateNavArrowDisabled: { color: colors.border },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text, textAlign: "center", minWidth: 160 },
+  headerSubtitle: { fontSize: 13, color: colors.muted, marginTop: 4, textAlign: "center" },
   emptyBox: { backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.lg, borderWidth: 0.5, borderColor: colors.border },
   emptyText: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   taskRow: {
