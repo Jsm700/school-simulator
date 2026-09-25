@@ -15,7 +15,9 @@ import {
 } from "../services/deviceLink";
 
 const STEP_CHOOSE_ROLE = "choose_role";
+const STEP_PARENT_CHOICE = "parent_choice";
 const STEP_PARENT_ADD_CHILD = "parent_add_child";
+const STEP_PARENT_REJOIN_CODE = "parent_rejoin_code";
 const STEP_CHILD_ENTER_CODE = "child_enter_code";
 const STEP_CHILD_PICK = "child_pick";
 
@@ -34,6 +36,8 @@ export default function ConnectDeviceScreen({ onLinked }) {
   // детски поток
   const [codeInput, setCodeInput] = useState("");
   const [joinedChildren, setJoinedChildren] = useState([]);
+  // родителски rejoin поток (вече имам семеен код)
+  const [parentRejoinCode, setParentRejoinCode] = useState("");
 
   const startParentFlow = useCallback(async () => {
     setLoading(true);
@@ -78,6 +82,20 @@ export default function ConnectDeviceScreen({ onLinked }) {
     onLinked({ role: "parent", familyId, familyCode });
   }, [children, familyId, familyCode, onLinked]);
 
+  const handleParentRejoin = useCallback(async () => {
+    if (!parentRejoinCode.trim()) return;
+    setLoading(true);
+    try {
+      const result = await joinFamily(parentRejoinCode);
+      await saveLinkedDevice({ role: "parent", familyId: result.family_id, familyCode: result.code });
+      onLinked({ role: "parent", familyId: result.family_id, familyCode: result.code });
+    } catch (e) {
+      Alert.alert("Грешен код", "Провери кода и опитай пак.");
+    } finally {
+      setLoading(false);
+    }
+  }, [parentRejoinCode, onLinked]);
+
   const handleJoinFamily = useCallback(async () => {
     if (!codeInput.trim()) return;
     setLoading(true);
@@ -116,7 +134,7 @@ export default function ConnectDeviceScreen({ onLinked }) {
           <>
             <Text style={styles.title}>Добре дошъл в Училищен Симулатор</Text>
             <Text style={styles.subtitle}>Това устройство на родител ли е, или на дете?</Text>
-            <TouchableOpacity style={styles.bigBtn} onPress={startParentFlow} disabled={loading}>
+            <TouchableOpacity style={styles.bigBtn} onPress={() => setStep(STEP_PARENT_CHOICE)} disabled={loading}>
               <Text style={styles.bigBtnText}>👨‍👩‍👧 Аз съм родител</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -125,6 +143,42 @@ export default function ConnectDeviceScreen({ onLinked }) {
               disabled={loading}
             >
               <Text style={styles.bigBtnText}>🧒 Аз съм дете</Text>
+            </TouchableOpacity>
+            {loading && <ActivityIndicator style={{ marginTop: spacing.lg }} color={colors.primary} />}
+          </>
+        )}
+
+        {step === STEP_PARENT_CHOICE && (
+          <>
+            <Text style={styles.title}>Родителско устройство</Text>
+            <Text style={styles.subtitle}>Ново семейство ли настройваш, или вече имаш семеен код от друго устройство?</Text>
+            <TouchableOpacity style={styles.bigBtn} onPress={startParentFlow} disabled={loading}>
+              <Text style={styles.bigBtnText}>✨ Ново семейство</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bigBtn, styles.bigBtnSecondary]}
+              onPress={() => setStep(STEP_PARENT_REJOIN_CODE)}
+              disabled={loading}
+            >
+              <Text style={styles.bigBtnText}>🔑 Вече имам семеен код</Text>
+            </TouchableOpacity>
+            {loading && <ActivityIndicator style={{ marginTop: spacing.lg }} color={colors.primary} />}
+          </>
+        )}
+
+        {step === STEP_PARENT_REJOIN_CODE && (
+          <>
+            <Text style={styles.title}>Въведи семейния код</Text>
+            <Text style={styles.subtitle}>Същия код, който вече ползваш на другите устройства.</Text>
+            <TextInput
+              style={[styles.input, styles.codeInput]}
+              placeholder="напр. AB12CD"
+              value={parentRejoinCode}
+              onChangeText={setParentRejoinCode}
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity style={styles.bigBtn} onPress={handleParentRejoin} disabled={loading}>
+              <Text style={styles.bigBtnText}>Продължи</Text>
             </TouchableOpacity>
             {loading && <ActivityIndicator style={{ marginTop: spacing.lg }} color={colors.primary} />}
           </>
