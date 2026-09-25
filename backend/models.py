@@ -139,3 +139,22 @@ class HomeworkCheckLog(BaseModel):
     feedback: str = ""
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+# ---------- Тетрадка (термини/дефиниции, снимани по време на "Оживи урока") ----------
+
+class NotebookEntry(BaseModel):
+    id: str = Field(default_factory=new_id)
+    child_id: str
+    kv_key: str  # урокът, към който принадлежи терминът
+    term: str
+    has_bonus_explanation: bool = False
+    feedback: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class NotebookCheckRequest(BaseModel):
+    kv_key: str
+    term: str
+    definition: str
+    image: str  # data URL
+

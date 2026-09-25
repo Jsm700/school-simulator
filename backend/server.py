@@ -22,7 +22,7 @@ from models import (
     Family, Child, ChildCreate, CompletedLesson, PointsLogEntry,
     AwardPointsRequest, StreakData, SceneProgress, SceneProgressUpdate,
     WeeklySchedule, DailyTaskSnapshot, HomeworkEntry, HomeworkImportRequest, HomeworkCheckRequest,
-    HomeworkCheckLog,
+    HomeworkCheckLog, NotebookEntry, NotebookCheckRequest,
 )
 
 MONGO_URL = os.environ["MONGO_URL"]
@@ -156,6 +156,27 @@ async def _award_points(child_id: str, lesson_key: str, subject: str, lesson_tit
         topics_total=safe_total,
         topics_covered=safe_covered,
         complete=complete,
+        points=total_points,
+    )
+    await db.points_log.insert_one(entry.dict())
+    return {**entry.dict(), "current_streak": current_streak}
+
+
+async def _award_fixed_points(child_id: str, lesson_key: str, subject: str, lesson_title: str,
+                               points: int) -> dict:
+    """За източници с фиксирана стойност (тетрадка), не топик-базирана формула."""
+    streak_points, current_streak = await update_streak(child_id)
+    total_points = points + streak_points
+
+    entry = PointsLogEntry(
+        child_id=child_id,
+        date=today_str(),
+        lesson_key=lesson_key,
+        subject=subject,
+        lesson_title=lesson_title,
+        topics_total=1,
+        topics_covered=1,
+        complete=True,
         points=total_points,
     )
     await db.points_log.insert_one(entry.dict())
@@ -522,6 +543,102 @@ async def homework_stats(child_id: str):
         "success_rate_pct": success_rate,
         "total_checks": total_checks,
     }
+
+
+# ---------------- Тетрадка (термини/дефиниции, снимани по време на "Оживи урока") ----------------
+
+NOTEBOOK_TERM_POINTS = 20
+NOTEBOOK_BONUS_POINTS = 10
+
+
+@app.get("/children/{child_id}/notebook")
+async def get_notebook_entries(child_id: str, kv_key: str = None):
+    query = {"child_id": child_id}
+    if kv_key:
+        query["kv_key"] = kv_key
+    rows = await db.notebook.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return rows
+
+
+@app.post("/children/{child_id}/notebook/check")
+async def check_notebook(child_id: str, payload: NotebookCheckRequest):
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(500, "ANTHROPIC_API_KEY не е зададен на сървъра")
+
+    # Ако вече е внесен този термин за този урок, не проверяваме повторно.
+    existing = await db.notebook.find_one(
+        {"child_id": child_id, "kv_key": payload.kv_key, "term": payload.term}
+    )
+    if existing:
+        return {"already_done": True, "points": 0}
+
+    instruction = (
+        f"Виждаш снимка на ръкописна тетрадка на дете. То трябваше да запише: "
+        f"термин \"{payload.term}\" с определение \"{payload.definition}\". "
+        f"Провери ЩЕДРО дали има реален, разпознаваем опит да препише термина и "
+        f"определението (не оценявай почерк/точност на всяка дума — само дали е "
+        f"направен истински опит, не празно/драскулки/нерелевантен текст). Провери "
+        f"ОТДЕЛНО дали ДОПЪЛНИТЕЛНО има собствено обяснение на детето със свои думи "
+        f"(извън простото преписване на определението) — това е бонус, не е "
+        f"задължително. Отговори САМО с валиден JSON от вида "
+        f'{{"passed": true/false, "has_bonus": true/false, "feedback": "кратко '
+        f'насърчително съобщение на дете-разбираем език"}}, без никакъв друг текст.'
+    )
+
+    media_type, b64 = _parse_data_url(payload.image)
+    content = [
+        {"type": "text", "text": instruction},
+        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+    ]
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        res = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 500,
+                "messages": [{"role": "user", "content": content}],
+            },
+        )
+    if res.status_code != 200:
+        raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
+
+    data = res.json()
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(json)?", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+    text = text.translate(str.maketrans({
+        "\u201e": "'", "\u201c": "'", "\u201d": "'", "\u00ab": "'", "\u00bb": "'",
+    }))
+    try:
+        verdict = json.loads(text)
+    except json.JSONDecodeError:
+        raise HTTPException(502, "Не успях да разчета отговора на AI-то")
+
+    passed = bool(verdict.get("passed"))
+    has_bonus = bool(verdict.get("has_bonus"))
+    feedback = verdict.get("feedback", "")
+
+    if not passed:
+        return {"passed": False, "feedback": feedback, "points": 0}
+
+    await db.notebook.insert_one(
+        NotebookEntry(
+            child_id=child_id, kv_key=payload.kv_key, term=payload.term,
+            has_bonus_explanation=has_bonus, feedback=feedback,
+        ).dict()
+    )
+    points_value = NOTEBOOK_TERM_POINTS + (NOTEBOOK_BONUS_POINTS if has_bonus else 0)
+    points_result = await _award_fixed_points(
+        child_id, f"notebook_{payload.kv_key}_{payload.term}", "", payload.term, points_value,
+    )
+    return {"passed": True, "has_bonus": has_bonus, "feedback": feedback, "points": points_result["points"]}
 
 
 # ---------------- Страница за внос (родителят я отваря от компютъра си) ----------------
