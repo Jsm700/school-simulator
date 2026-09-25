@@ -268,7 +268,7 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
             "source": {"type": "base64", "media_type": media_type, "data": b64},
         })
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         res = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -278,7 +278,7 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
             },
             json={
                 "model": "claude-sonnet-4-6",
-                "max_tokens": 2000,
+                "max_tokens": 8000,
                 "messages": [{"role": "user", "content": content}],
             },
         )
@@ -286,6 +286,7 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
         raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
 
     data = res.json()
+    stop_reason = data.get("stop_reason", "")
     text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
     text = text.strip()
     if text.startswith("```"):
@@ -294,7 +295,20 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        raise HTTPException(502, "Не успях да разчета отговора на AI-то като JSON")
+        # Резервен опит: извади само частта, изглеждаща като JSON масив,
+        # ако Claude е добавил странична дума покрай него
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                parsed = None
+        else:
+            parsed = None
+        if parsed is None:
+            print(f"[homework-import] JSON parse failed, stop_reason={stop_reason}, text[:500]={text[:500]!r}")
+            hint = " (отговорът изглежда отрязан — пробвай с по-малко снимки наведнъж)" if stop_reason == "max_tokens" else ""
+            raise HTTPException(502, f"Не успях да разчета отговора на AI-то като JSON{hint}")
     return parsed if isinstance(parsed, list) else []
 
 
