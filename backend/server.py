@@ -294,7 +294,7 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
         text = re.sub(r"```$", "", text).strip()
     try:
         parsed = json.loads(text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         # Резервен опит: извади само частта, изглеждаща като JSON масив,
         # ако Claude е добавил странична дума покрай него
         m = re.search(r"\[.*\]", text, re.DOTALL)
@@ -306,7 +306,10 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
         else:
             parsed = None
         if parsed is None:
-            print(f"[homework-import] JSON parse failed, stop_reason={stop_reason}, text[:500]={text[:500]!r}")
+            print(
+                f"[homework-import] JSON parse failed: {e} | stop_reason={stop_reason} | "
+                f"text_len={len(text)} | around_error={text[max(0,e.pos-100):e.pos+100]!r}"
+            )
             hint = " (отговорът изглежда отрязан — пробвай с по-малко снимки наведнъж)" if stop_reason == "max_tokens" else ""
             raise HTTPException(502, f"Не успях да разчета отговора на AI-то като JSON{hint}")
     return parsed if isinstance(parsed, list) else []
