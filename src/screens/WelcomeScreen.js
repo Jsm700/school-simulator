@@ -15,7 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
 import { getTotalPoints, resetPoints } from "../services/points";
-import { getLinkedDevice } from "../services/deviceLink";
+import { getLinkedDevice, unlinkDevice } from "../services/deviceLink";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -97,7 +97,7 @@ function Picker({ label, options, value, onChange }) {
   );
 }
 
-export default function WelcomeScreen({ navigation }) {
+export default function WelcomeScreen({ navigation, onDisconnect }) {
   const [classVal, setClassVal] = useState("4");
   const [subject, setSubject] = useState("human_nature");
   const [publisher, setPublisher] = useState("klett");
@@ -141,6 +141,24 @@ export default function WelcomeScreen({ navigation }) {
       ]
     );
   }, [refreshPoints]);
+
+  const handleDisconnect = React.useCallback(() => {
+    Alert.alert(
+      "Разкачи устройството?",
+      "Ще се върнеш на екрана за семеен код. Данните (точки, прогрес, домашни) остават непокътнати в облака — просто ще трябва да въведеш кода отново.",
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Разкачи",
+          style: "destructive",
+          onPress: async () => {
+            await unlinkDevice();
+            if (onDisconnect) onDisconnect();
+          },
+        },
+      ]
+    );
+  }, [onDisconnect]);
 
   // Издателството се помни ПО ПРЕДМЕТ (напр. история -> Анубис, английски -> Super Minds),
   // не като едно общо "последно избрано" — иначе смяната на предмет носи грешно издателство.
@@ -398,6 +416,9 @@ returnKeyType="done"
           </TouchableOpacity>
           <TouchableOpacity style={styles.scheduleLink} onPress={handleResetPoints}>
             <Text style={styles.resetPointsText}>🔄 Занули точките</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.scheduleLink} onPress={handleDisconnect}>
+            <Text style={styles.resetPointsText}>🔌 Разкачи устройството</Text>
           </TouchableOpacity>
         </View>
 

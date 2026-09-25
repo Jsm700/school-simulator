@@ -56,5 +56,5 @@ export default function Index() {
     return <ParentDashboardScreen />;
   }
 
-  return <WelcomeScreen navigation={navigation} />;
+  return <WelcomeScreen navigation={navigation} onDisconnect={() => setLinked(null)} />;
 }
