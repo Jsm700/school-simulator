@@ -551,7 +551,7 @@ IMPORT_PAGE_HTML = """<!DOCTYPE html>
 
 <div class="card" id="childCard" style="display:none">
   <label>Дете</label>
-  <select id="childSelect"></select>
+  <select id="childSelect" onchange="clearResults()"></select>
 </div>
 
 <div class="card" id="uploadCard" style="display:none">
@@ -617,6 +617,7 @@ async function loadChildren() {
   sel.innerHTML = children.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   document.getElementById('childCard').style.display = 'block';
   document.getElementById('uploadCard').style.display = 'block';
+  clearResults();
 }
 
 function fileToDataUrl(file) {
@@ -628,12 +629,18 @@ function fileToDataUrl(file) {
   });
 }
 
+function clearResults() {
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('status').textContent = '';
+}
+
 async function doImport() {
   const childId = document.getElementById('childSelect').value;
   const files = document.getElementById('files').files;
   const fromFiles = await Promise.all(Array.from(files).map(fileToDataUrl));
   const images = [...pastedImages, ...fromFiles];
   if (!images.length) { alert('Постни (Ctrl+V) или избери поне една снимка.'); return; }
+  clearResults();
   document.getElementById('status').textContent = 'Разпознавам... (може да отнеме до минута)';
   try {
     const res = await fetch(`${BASE}/children/${childId}/homework/import`, {
