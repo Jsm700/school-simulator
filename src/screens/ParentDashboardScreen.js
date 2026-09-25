@@ -15,12 +15,13 @@ const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === v
 
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
     fetch(`${BACKEND_URL}/children/${childId}/homework?done=false`).then((r) => r.json()).catch(() => []),
     fetch(`${BACKEND_URL}/children/${childId}/homework/stats`).then((r) => r.json()).catch(() => null),
+    fetch(`${BACKEND_URL}/children/${childId}/notebook`).then((r) => r.json()).catch(() => []),
   ]);
   return {
     total: pointsRes.total || 0,
@@ -29,6 +30,7 @@ async function fetchChildData(childId) {
     todayAssignments: tasksRes.assignments || {},
     homework: Array.isArray(homeworkRes) ? homeworkRes : [],
     homeworkStats: statsRes,
+    notebook: Array.isArray(notebookRes) ? notebookRes : [],
   };
 }
 
@@ -228,6 +230,26 @@ export default function ParentDashboardScreen() {
                   </View>
                 </TouchableOpacity>
               ))
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📓 Тетрадка</Text>
+            {childData.notebook.length === 0 ? (
+              <Text style={styles.mutedText}>Още няма записани термини.</Text>
+            ) : (
+              <>
+                <Text style={styles.mutedText}>
+                  {childData.notebook.length} термина записани, от които{" "}
+                  {childData.notebook.filter((n) => n.has_bonus_explanation).length} с бонус обяснение
+                </Text>
+                {childData.notebook.slice(0, 10).map((n) => (
+                  <View key={n.id} style={styles.subjectRow}>
+                    <Text style={styles.taskTitle}>{n.term}</Text>
+                    <Text style={{ fontSize: 12 }}>{n.has_bonus_explanation ? "✨" : ""}</Text>
+                  </View>
+                ))}
+              </>
             )}
           </View>
 

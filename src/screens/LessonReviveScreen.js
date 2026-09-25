@@ -7,10 +7,14 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Image,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius } from "../theme";
 import { getSceneProgress, saveSceneProgress } from "../services/sceneProgress";
+import { BACKEND_URL, getCurrentChildId } from "../services/deviceLink";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 
@@ -18,10 +22,15 @@ export default function LessonReviveScreen({ route, navigation }) {
   const { lesson, studentName, studentGender, studentGrade } = route.params;
 
   const [scenes, setScenes] = useState(null);
+  const [vocabulary, setVocabulary] = useState({});
   const [loading, setLoading] = useState(true);
   const [sceneIndex, setSceneIndex] = useState(0);
   // Помни избора на детето за ВСЯКА сцена по индекс, за да може да се връща назад/напред без да губи прогреса
   const [sceneChoices, setSceneChoices] = useState({});
+  // Термини от тетрадката, вече успешно внесени за този урок — не се показват повторно
+  const [doneTerms, setDoneTerms] = useState(new Set());
+  const [notebookPhoto, setNotebookPhoto] = useState(null); // {uri, base64}
+  const [notebookChecking, setNotebookChecking] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +46,25 @@ export default function LessonReviveScreen({ route, navigation }) {
         const loadedScenes = parsed && Array.isArray(parsed.reviveScenes) ? parsed.reviveScenes : [];
         if (cancelled) return;
         setScenes(loadedScenes);
+        setVocabulary((parsed && parsed.vocabulary) || {});
+
+        // Кои термини от тетрадката вече са внесени за този урок — да не се питат повторно
+        if (lesson.kvKey) {
+          const childId = await getCurrentChildId();
+          if (childId) {
+            try {
+              const nbRes = await fetch(
+                `${BACKEND_URL}/children/${childId}/notebook?kv_key=${encodeURIComponent(lesson.kvKey)}`
+              );
+              const nbEntries = await nbRes.json();
+              if (!cancelled && Array.isArray(nbEntries)) {
+                setDoneTerms(new Set(nbEntries.map((e) => e.term)));
+              }
+            } catch (e) {
+              // тихо — тетрадката е бонус функция, не бива да чупи основния поток
+            }
+          }
+        }
 
         // Възстанови позицията на детето, ако вече е гледало този урок преди
         if (lesson.kvKey && loadedScenes.length > 0) {
@@ -65,6 +93,10 @@ export default function LessonReviveScreen({ route, navigation }) {
     saveSceneProgress(lesson.kvKey, { sceneIndex, total: scenes.length, choices: sceneChoices });
   }, [lesson.kvKey, scenes, sceneIndex, sceneChoices]);
 
+  useEffect(() => {
+    setNotebookPhoto(null);
+  }, [sceneIndex]);
+
   const selectedChoice = sceneChoices[sceneIndex] || null;
 
   const handleChoice = useCallback((choice) => {
@@ -86,6 +118,57 @@ export default function LessonReviveScreen({ route, navigation }) {
   const handleGoToExam = useCallback(() => {
     navigation.replace("Quiz", { lesson, studentName, studentGender, studentGrade });
   }, [navigation, lesson, studentName, studentGender, studentGrade]);
+
+  const pickNotebookPhoto = useCallback(async (fromCamera) => {
+    const perm = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Няма разрешение", "Трябва достъп до камерата/снимките, за да продължиш.");
+      return;
+    }
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7 });
+    if (result.canceled || !result.assets || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setNotebookPhoto({ uri: asset.uri, base64: `data:image/jpeg;base64,${asset.base64}` });
+  }, []);
+
+  const submitNotebookPhoto = useCallback(async (term) => {
+    if (!notebookPhoto || !lesson.kvKey) return;
+    const childId = await getCurrentChildId();
+    if (!childId) return;
+    setNotebookChecking(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/children/${childId}/notebook/check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kv_key: lesson.kvKey,
+          term,
+          definition: vocabulary[term] || "",
+          image: notebookPhoto.base64,
+        }),
+      });
+      const data = await res.json();
+      if (data.passed || data.already_done) {
+        setDoneTerms((prev) => new Set(prev).add(term));
+        setNotebookPhoto(null);
+        if (data.passed) {
+          const bonusNote = data.has_bonus ? " (+ бонус за собствено обяснение!)" : "";
+          Alert.alert("✅ Прието!", `${data.feedback}\n\n+${data.points} точки${bonusNote}`);
+        }
+      } else {
+        Alert.alert("Опитай пак", data.feedback || "Не изглежда напълно готово — провери и пробвай пак.");
+        setNotebookPhoto(null);
+      }
+    } catch (e) {
+      Alert.alert("Грешка", "Нещо се обърка. Провери връзката и опитай пак.");
+    } finally {
+      setNotebookChecking(false);
+    }
+  }, [notebookPhoto, lesson.kvKey, vocabulary]);
 
   if (loading) {
     return (
@@ -121,6 +204,52 @@ export default function LessonReviveScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>{lesson.title}</Text>
         <Text style={styles.sceneText}>{scene.text}</Text>
+
+        {(() => {
+          const pendingTerms = (scene.vocabTerms || []).filter((t) => !doneTerms.has(t));
+          if (pendingTerms.length === 0) return null;
+          const term = pendingTerms[0];
+          return (
+            <View style={styles.notebookBox}>
+              <Text style={styles.notebookPrompt}>
+                📝 Запиши в тетрадката: <Text style={{ fontWeight: "700" }}>{term}</Text>
+                {vocabulary[term] ? ` — ${vocabulary[term]}` : ""}
+              </Text>
+              <Text style={styles.notebookBonus}>
+                ✨ Бонус, ако искаш: обясни и със свои думи — допълнителни точки
+              </Text>
+
+              {notebookPhoto ? (
+                <>
+                  <Image source={{ uri: notebookPhoto.uri }} style={styles.notebookPreview} />
+                  <TouchableOpacity
+                    style={styles.notebookSubmitBtn}
+                    onPress={() => submitNotebookPhoto(term)}
+                    disabled={notebookChecking}
+                  >
+                    {notebookChecking ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.notebookBtnText}>Прати за проверка</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <View style={styles.notebookRow}>
+                  <TouchableOpacity style={styles.notebookBtn} onPress={() => pickNotebookPhoto(true)}>
+                    <Text style={styles.notebookBtnText}>📷 Снимай</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.notebookBtn, styles.notebookBtnSecondary]}
+                    onPress={() => pickNotebookPhoto(false)}
+                  >
+                    <Text style={styles.notebookBtnText}>🖼️ Галерия</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          );
+        })()}
 
         {(scene.choices || []).map((choice, idx) => {
           const isSelected = selectedChoice && selectedChoice.label === choice.label;
@@ -207,6 +336,21 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   nextBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  notebookBox: {
+    backgroundColor: colors.successLight, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.success,
+  },
+  notebookPrompt: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  notebookBonus: { fontSize: 12, color: colors.muted, marginTop: spacing.xs, marginBottom: spacing.sm },
+  notebookRow: { flexDirection: "row", gap: spacing.sm },
+  notebookBtn: {
+    flex: 1, backgroundColor: colors.success, borderRadius: radius.sm,
+    padding: spacing.sm, alignItems: "center",
+  },
+  notebookBtnSecondary: { backgroundColor: colors.primary },
+  notebookBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  notebookPreview: { width: "100%", height: 160, borderRadius: radius.sm, marginBottom: spacing.sm, resizeMode: "cover" },
+  notebookSubmitBtn: { backgroundColor: colors.warning, borderRadius: radius.sm, padding: spacing.sm, alignItems: "center" },
   emptyText: { fontSize: 15, color: colors.muted, marginBottom: spacing.lg, textAlign: "center" },
   examBtn: {
     backgroundColor: colors.primary,
