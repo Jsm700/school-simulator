@@ -24,6 +24,7 @@ import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { markLessonCompleted, isLessonCompleted } from "../services/progress";
 import { awardLessonPoints } from "../services/points";
+import { logActivityMinutes } from "../services/deviceLink";
 
 function TopicPill({ label, done }) {
   return (
@@ -92,6 +93,7 @@ export default function QuizScreen({ navigation }) {
   const messagesRef = useRef([]); // Синхронно следене на съобщенията
   const speechAccumRef = useRef(""); // Натрупан текст между отделни result събития в continuous режим
   const exchangeCountRef = useRef(0); // брой AI отговори през сесията — база за пропорционалните точки при "Приключих"
+  const enteredAtRef = useRef(Date.now()); // Focus-line: за логване на реално прекараното време
 
   // Речник на урока + режим "непозната дума"
   const [vocabWords, setVocabWords] = useState(null); // null = още не е зареден
@@ -274,6 +276,8 @@ export default function QuizScreen({ navigation }) {
         currentSoundRef.current.unloadAsync().catch(() => {});
         currentSoundRef.current = null;
       }
+      const minutes = (Date.now() - enteredAtRef.current) / 60000;
+      if (minutes >= 0.15) logActivityMinutes(minutes);
     };
   }, []);
 

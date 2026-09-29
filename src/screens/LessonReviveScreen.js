@@ -1,5 +1,5 @@
 // src/screens/LessonReviveScreen.js
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -14,12 +14,21 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius } from "../theme";
 import { getSceneProgress, saveSceneProgress } from "../services/sceneProgress";
-import { BACKEND_URL, getCurrentChildId } from "../services/deviceLink";
+import { BACKEND_URL, getCurrentChildId, logActivityMinutes } from "../services/deviceLink";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 
 export default function LessonReviveScreen({ route, navigation }) {
   const { lesson, studentName, studentGender, studentGrade } = route.params;
+
+  // Focus-line: логва реално прекараното време в урока при излизане от екрана
+  const enteredAtRef = useRef(Date.now());
+  useEffect(() => {
+    return () => {
+      const minutes = (Date.now() - enteredAtRef.current) / 60000;
+      if (minutes >= 0.15) logActivityMinutes(minutes);
+    };
+  }, []);
 
   const [scenes, setScenes] = useState(null);
   const [vocabulary, setVocabulary] = useState({});

@@ -41,6 +41,22 @@ export async function unlinkDevice() {
   }
 }
 
+// Логва реално прекарано време за дневната "батерия" (Focus-line функция)
+export async function logActivityMinutes(minutes) {
+  if (!minutes || minutes <= 0) return;
+  const childId = await getCurrentChildId();
+  if (!childId) return;
+  try {
+    await fetch(`${BACKEND_URL}/children/${childId}/activity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes }),
+    });
+  } catch (e) {
+    console.error("deviceLink.logActivityMinutes error:", e);
+  }
+}
+
 async function post(path, body) {
   const res = await fetch(`${BACKEND_URL}${path}`, {
     method: "POST",
