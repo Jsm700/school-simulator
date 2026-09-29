@@ -344,6 +344,29 @@ def _parse_data_url(data_url: str):
     return m.group(1), m.group(2)
 
 
+def _parse_verdict_json(raw_text: str) -> dict:
+    """Разчита JSON обект {"passed": ..., "feedback": ...} от отговора на Claude,
+    издържа на code fences, типографски кавички, и увод/следсловие покрай JSON-а
+    (по-вероятно при повече снимки в едно запитване)."""
+    text = (raw_text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(json)?", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+    text = text.translate(str.maketrans({
+        "„": "'", "“": "'", "”": "'", "«": "'", "»": "'",
+    }))
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+        raise HTTPException(502, "Не успях да разчета отговора на AI-то")
+
+
 async def _extract_homework_from_images(images: List[str]) -> List[dict]:
     if not ANTHROPIC_API_KEY:
         raise HTTPException(500, "ANTHROPIC_API_KEY не е зададен на сървъра")
@@ -533,7 +556,7 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
             },
             json={
                 "model": "claude-sonnet-4-6",
-                "max_tokens": 500,
+                "max_tokens": 1000,
                 "messages": [{"role": "user", "content": content}],
             },
         )
@@ -542,13 +565,7 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
 
     data = res.json()
     text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(json)?", "", text).strip()
-        text = re.sub(r"```$", "", text).strip()
-    try:
-        verdict = json.loads(text)
-    except json.JSONDecodeError:
-        raise HTTPException(502, "Не успях да разчета отговора на AI-то")
+    verdict = _parse_verdict_json(text)
 
     passed = bool(verdict.get("passed"))
     feedback = verdict.get("feedback", "")
@@ -693,7 +710,7 @@ async def check_notebook(child_id: str, payload: NotebookCheckRequest):
             },
             json={
                 "model": "claude-sonnet-4-6",
-                "max_tokens": 500,
+                "max_tokens": 1000,
                 "messages": [{"role": "user", "content": content}],
             },
         )
@@ -702,16 +719,7 @@ async def check_notebook(child_id: str, payload: NotebookCheckRequest):
 
     data = res.json()
     text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(json)?", "", text).strip()
-        text = re.sub(r"```$", "", text).strip()
-    text = text.translate(str.maketrans({
-        "\u201e": "'", "\u201c": "'", "\u201d": "'", "\u00ab": "'", "\u00bb": "'",
-    }))
-    try:
-        verdict = json.loads(text)
-    except json.JSONDecodeError:
-        raise HTTPException(502, "Не успях да разчета отговора на AI-то")
+    verdict = _parse_verdict_json(text)
 
     passed = bool(verdict.get("passed"))
     has_bonus = bool(verdict.get("has_bonus"))
