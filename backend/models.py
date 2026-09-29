@@ -127,7 +127,8 @@ class HomeworkImportRequest(BaseModel):
 
 
 class HomeworkCheckRequest(BaseModel):
-    image: str  # data URL, снимка на готовото домашно
+    images: list[str] = []  # data URLs, снимки на готовото домашно (може няколко страници)
+    image: str | None = None  # обратна съвместимост със стария едноснимков клиент
 
 
 class HomeworkCheckLog(BaseModel):

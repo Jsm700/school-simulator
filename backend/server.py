@@ -489,29 +489,39 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
     task_text = row.get("task_text", "")
     is_math = "математик" in subject.lower()
 
+    images = payload.images or ([payload.image] if payload.image else [])
+    if not images:
+        raise HTTPException(400, "Няма приложена снимка")
+    multi_note = (
+        " Приложени са няколко снимки (последователни страници — може да включват "
+        "условието от учебника и/или няколко страници от решението); разгледай ги заедно "
+        "като едно цяло."
+        if len(images) > 1 else ""
+    )
+
     if is_math:
         instruction = (
-            f"Ти си строг учител по математика. На снимката е показано решение на "
-            f"задача със следния текст от Школо: \"{task_text}\". Провери дали конкретният "
-            f"отговор/решение на снимката е ПРАВИЛЕН. Отговори САМО с валиден JSON от вида "
+            f"Ти си строг учител по математика. На снимката(ите) е показано решение на "
+            f"задача със следния текст от Школо: \"{task_text}\".{multi_note} Провери дали "
+            f"конкретният отговор/решение е ПРАВИЛЕН. Отговори САМО с валиден JSON от вида "
             f'{{"passed": true/false, "feedback": "кратко обяснение защо (1-2 изречения, на '
             f'дете-разбираем език)"}}, без никакъв друг текст."'
         )
     else:
         instruction = (
-            f"Ти си насърчаващ учител. Виждаш снимка на свършено домашно със задача от Школо: "
-            f"\"{task_text}\". Провери САМО дали има реален, смислен опит за решаване — НЕ "
-            f"оценявай почерк, стил или прецизност. Отхвърли само ако страницата е празна, "
-            f"драскулки, или напълно нерелевантна на задачата. Отговори САМО с валиден JSON от "
-            f'вида {{"passed": true/false, "feedback": "кратко насърчително съобщение на '
+            f"Ти си насърчаващ учител. Виждаш снимка(и) на свършено домашно със задача от "
+            f"Школо: \"{task_text}\".{multi_note} Провери САМО дали има реален, смислен опит "
+            f"за решаване — НЕ оценявай почерк, стил или прецизност. Отхвърли само ако "
+            f"страницата е празна, драскулки, или напълно нерелевантна на задачата. Отговори "
+            f"САМО с валиден JSON от вида "
+            f'{{"passed": true/false, "feedback": "кратко насърчително съобщение на '
             f'дете-разбираем език"}}, без никакъв друг текст.'
         )
 
-    media_type, b64 = _parse_data_url(payload.image)
-    content = [
-        {"type": "text", "text": instruction},
-        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-    ]
+    content = [{"type": "text", "text": instruction}]
+    for img in images:
+        media_type, b64 = _parse_data_url(img)
+        content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         res = await client.post(

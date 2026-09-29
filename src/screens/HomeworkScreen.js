@@ -1,6 +1,7 @@
 // src/screens/HomeworkScreen.js
 // Детето вижда чакащите домашни (внесени от родителя през /import), избира
-// едно, снима готовото решение (камера или галерия) и го праща за проверка —
+// едно, снима готовото решение (собствена вградена камера — може няколко
+// снимки една след друга, напр. условие + решение) и го праща за проверка —
 // строга за математика, щедра за останалото. При успех автоматично се
 // маркира готово и се начисляват точки в общия дневник.
 
@@ -13,14 +14,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius } from "../theme";
 import { BACKEND_URL, getCurrentChildId } from "../services/deviceLink";
+import MultiShotCamera from "../components/MultiShotCamera";
 
 export default function HomeworkScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [homework, setHomework] = useState([]);
   const [childId, setChildId] = useState(null);
   const [selected, setSelected] = useState(null); // избраното домашно за снимане
-  const [photoUri, setPhotoUri] = useState(null);
-  const [photoBase64, setPhotoBase64] = useState(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [photos, setPhotos] = useState([]); // [{uri, base64}] — може да са няколко страници
   const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
@@ -41,32 +43,49 @@ export default function HomeworkScreen({ navigation }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const pickPhoto = useCallback(async (fromCamera) => {
+  const onCameraDone = useCallback((shots) => {
+    setPhotos((prev) => [
+      ...prev,
+      ...shots.map((s) => ({ uri: s.uri, base64: `data:image/jpeg;base64,${s.base64}` })),
+    ]);
+    setCameraOpen(false);
+  }, []);
+
+  const pickFromGallery = useCallback(async () => {
     try {
-      const perm = fromCamera
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Няма разрешение", "Трябва достъп до камерата/снимките, за да продължиш.");
+        Alert.alert("Няма разрешение", "Трябва достъп до снимките, за да продължиш.");
         return;
       }
-      const result = fromCamera
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7 });
-      if (result.canceled || !result.assets || !result.assets[0]) return;
-      const asset = result.assets[0];
-      setPhotoUri(asset.uri);
-      setPhotoBase64(`data:image/jpeg;base64,${asset.base64}`);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        base64: true,
+        quality: 0.7,
+        allowsMultipleSelection: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+      setPhotos((prev) => [
+        ...prev,
+        ...result.assets.map((a) => ({ uri: a.uri, base64: `data:image/jpeg;base64,${a.base64}` })),
+      ]);
     } catch (e) {
-      // Временно видим error handler — за да видим РЕАЛНАТА грешка от ImagePicker
-      // вместо тя да изчезва тихо в release build без dev tools.
-      console.error("HomeworkScreen.pickPhoto error:", e);
-      Alert.alert("Грешка при снимане", String((e && e.message) || e));
+      console.error("HomeworkScreen.pickFromGallery error:", e);
+      Alert.alert("Грешка при избор на снимка", String((e && e.message) || e));
     }
   }, []);
 
+  const removePhoto = useCallback((idx) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const reset = useCallback(() => {
+    setSelected(null);
+    setPhotos([]);
+    setCameraOpen(false);
+  }, []);
+
   const submit = useCallback(async () => {
-    if (!selected || !photoBase64 || !childId) return;
+    if (!selected || photos.length === 0 || !childId) return;
     setChecking(true);
     try {
       const res = await fetch(
@@ -74,7 +93,7 @@ export default function HomeworkScreen({ navigation }) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: photoBase64 }),
+          body: JSON.stringify({ images: photos.map((p) => p.base64) }),
         }
       );
       const data = await res.json();
@@ -83,11 +102,11 @@ export default function HomeworkScreen({ navigation }) {
         if (data.is_jackpot) extras.push("🎰 ДЖАКПОТ — двойни точки!");
         if (data.same_day_bonus > 0) extras.push(`🔁 +${data.same_day_bonus} за връщане пак днес`);
         Alert.alert("✅ Прието!", `${data.feedback}\n\n+${data.points} точки${extras.length ? `\n${extras.join(" · ")}` : ""}`, [
-          { text: "Супер", onPress: () => { setSelected(null); setPhotoUri(null); setPhotoBase64(null); load(); } },
+          { text: "Супер", onPress: () => { reset(); load(); } },
         ]);
       } else {
         Alert.alert("Опитай пак", data.feedback || "Не изглежда напълно готово — провери и пробвай пак.", [
-          { text: "Добре", onPress: () => { setPhotoUri(null); setPhotoBase64(null); } },
+          { text: "Добре", onPress: () => setPhotos([]) },
         ]);
       }
     } catch (e) {
@@ -95,7 +114,7 @@ export default function HomeworkScreen({ navigation }) {
     } finally {
       setChecking(false);
     }
-  }, [selected, photoBase64, childId, load]);
+  }, [selected, photos, childId, load, reset]);
 
   if (loading) {
     return (
@@ -105,12 +124,17 @@ export default function HomeworkScreen({ navigation }) {
     );
   }
 
+  // Вградена камера — може да снима няколко страници последователно
+  if (cameraOpen) {
+    return <MultiShotCamera onDone={onCameraDone} onCancel={() => setCameraOpen(false)} />;
+  }
+
   // Екран за снимане на избраното домашно
   if (selected) {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-          <TouchableOpacity onPress={() => { setSelected(null); setPhotoUri(null); setPhotoBase64(null); }}>
+          <TouchableOpacity onPress={reset}>
             <Text style={styles.backLink}>‹ Назад към списъка</Text>
           </TouchableOpacity>
 
@@ -119,28 +143,39 @@ export default function HomeworkScreen({ navigation }) {
             <Text style={styles.taskText}>{selected.task_text}</Text>
           </View>
 
-          {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.preview} />
+          {photos.length > 0 ? (
+            <ScrollView horizontal style={styles.previewRow} showsHorizontalScrollIndicator={false}>
+              {photos.map((p, idx) => (
+                <TouchableOpacity key={idx} style={styles.previewThumbWrap} onPress={() => removePhoto(idx)}>
+                  <Image source={{ uri: p.uri }} style={styles.previewThumb} />
+                  <View style={styles.previewRemove}>
+                    <Text style={styles.previewRemoveText}>✕</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           ) : (
             <View style={styles.placeholder}>
-              <Text style={styles.mutedText}>Няма избрана снимка още</Text>
+              <Text style={styles.mutedText}>Няма избрани снимки още</Text>
             </View>
           )}
 
-          <TouchableOpacity style={styles.bigBtn} onPress={() => pickPhoto(true)} disabled={checking}>
-            <Text style={styles.bigBtnText}>📷 Снимай сега</Text>
+          <TouchableOpacity style={styles.bigBtn} onPress={() => setCameraOpen(true)} disabled={checking}>
+            <Text style={styles.bigBtnText}>
+              📷 {photos.length > 0 ? "Снимай още страница" : "Снимай сега"}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.bigBtn, styles.bigBtnSecondary]} onPress={() => pickPhoto(false)} disabled={checking}>
+          <TouchableOpacity style={[styles.bigBtn, styles.bigBtnSecondary]} onPress={pickFromGallery} disabled={checking}>
             <Text style={styles.bigBtnText}>🖼️ Избери от галерията</Text>
           </TouchableOpacity>
 
-          {photoUri && (
+          {photos.length > 0 && (
             <TouchableOpacity
               style={[styles.bigBtn, styles.bigBtnSubmit]}
               onPress={submit}
               disabled={checking}
             >
-              {checking ? <ActivityIndicator color="#fff" /> : <Text style={styles.bigBtnText}>Прати за проверка</Text>}
+              {checking ? <ActivityIndicator color="#fff" /> : <Text style={styles.bigBtnText}>Прати за проверка ({photos.length})</Text>}
             </TouchableOpacity>
           )}
         </ScrollView>
@@ -192,9 +227,16 @@ const styles = StyleSheet.create({
   taskText: { fontSize: 14, color: colors.text, marginTop: spacing.xs },
   tapHint: { fontSize: 12, color: colors.primary, marginTop: spacing.sm },
   mutedText: { fontSize: 14, color: colors.muted },
-  preview: { width: "100%", height: 260, borderRadius: radius.md, marginBottom: spacing.md, resizeMode: "cover" },
+  previewRow: { marginBottom: spacing.md },
+  previewThumbWrap: { marginRight: spacing.sm },
+  previewThumb: { width: 110, height: 140, borderRadius: radius.md, resizeMode: "cover" },
+  previewRemove: {
+    position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: radius.full,
+    backgroundColor: colors.warning, alignItems: "center", justifyContent: "center",
+  },
+  previewRemoveText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   placeholder: {
-    height: 200, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    height: 140, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     borderStyle: "dashed", alignItems: "center", justifyContent: "center", marginBottom: spacing.md,
   },
   bigBtn: {
