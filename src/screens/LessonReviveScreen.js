@@ -129,19 +129,24 @@ export default function LessonReviveScreen({ route, navigation }) {
   }, [navigation, lesson, studentName, studentGender, studentGrade]);
 
   const pickNotebookPhoto = useCallback(async (fromCamera) => {
-    const perm = fromCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Няма разрешение", "Трябва достъп до камерата/снимките, за да продължиш.");
-      return;
+    try {
+      const perm = fromCamera
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Няма разрешение", "Трябва достъп до камерата/снимките, за да продължиш.");
+        return;
+      }
+      const result = fromCamera
+        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7 });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const asset = result.assets[0];
+      setNotebookPhoto({ uri: asset.uri, base64: `data:image/jpeg;base64,${asset.base64}` });
+    } catch (e) {
+      console.error("LessonReviveScreen.pickNotebookPhoto error:", e);
+      Alert.alert("Грешка при снимане", String((e && e.message) || e));
     }
-    const result = fromCamera
-      ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 })
-      : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7 });
-    if (result.canceled || !result.assets || !result.assets[0]) return;
-    const asset = result.assets[0];
-    setNotebookPhoto({ uri: asset.uri, base64: `data:image/jpeg;base64,${asset.base64}` });
   }, []);
 
   const submitNotebookPhoto = useCallback(async (term) => {
