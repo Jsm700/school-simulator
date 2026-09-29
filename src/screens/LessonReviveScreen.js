@@ -1,5 +1,5 @@
 // src/screens/LessonReviveScreen.js
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -187,6 +187,19 @@ export default function LessonReviveScreen({ route, navigation }) {
     }
   }, [notebookPhoto, lesson.kvKey, vocabulary]);
 
+  // Разбърква реда на отговорите при показване, за да не може детето просто да
+  // запомни "верният отговор е винаги първи" — пресмята се веднъж на сцена
+  // (не при всеки re-render, напр. след избор на отговор).
+  const shuffledChoices = useMemo(() => {
+    const currentScene = scenes && scenes[sceneIndex];
+    const arr = [...((currentScene && currentScene.choices) || [])];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [scenes, sceneIndex]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -270,7 +283,7 @@ export default function LessonReviveScreen({ route, navigation }) {
           );
         })()}
 
-        {(scene.choices || []).map((choice, idx) => {
+        {shuffledChoices.map((choice, idx) => {
           const isSelected = selectedChoice && selectedChoice.label === choice.label;
           return (
             <TouchableOpacity
