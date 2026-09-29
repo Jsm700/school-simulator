@@ -17,6 +17,8 @@ export const ALL_SCHOOL_SUBJECTS = [
   { value: "history", label: "История и цивилизации" },
   { value: "geography", label: "География и икономика" },
   { value: "biology", label: "Биология" },
+  { value: "physics", label: "Физика и астрономия" },
+  { value: "chemistry", label: "Химия и опазване на околната среда" },
   { value: "english", label: "Английски език" },
   { value: "music", label: "Музика" },
   { value: "art", label: "Изобразително изкуство" },

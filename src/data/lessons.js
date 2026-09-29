@@ -156,6 +156,7 @@ export const CLASS_OPTIONS = [
   { value: "4", label: "4. клас" },
   { value: "5", label: "5. клас" },
   { value: "6", label: "6. клас" },
+  { value: "7", label: "7. клас" },
 ];
 
 export const SUBJECT_OPTIONS = [
@@ -164,6 +165,8 @@ export const SUBJECT_OPTIONS = [
   { value: "history", label: "История и цивилизации" },
   { value: "geography", label: "География и икономика" },
   { value: "biology", label: "Биология" },
+  { value: "physics", label: "Физика и астрономия" },
+  { value: "chemistry", label: "Химия и опазване на околната среда" },
   { value: "english", label: "Английски език" },
 ];
 
