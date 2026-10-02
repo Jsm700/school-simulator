@@ -174,6 +174,8 @@ export const PUBLISHER_OPTIONS = [
   { value: "klett", label: "Клет" },
   { value: "prosveta", label: "Просвета" },
   { value: "super_minds", label: "Super Minds" },
+  { value: "bulvest", label: "Булвест" },
+  { value: "anubis", label: "Анубис" },
 ];
 
 export function getLessons(classVal, subject, publisher) {
