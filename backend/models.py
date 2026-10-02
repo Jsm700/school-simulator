@@ -38,6 +38,12 @@ class ChildCreate(BaseModel):
     grade: str = "4"
 
 
+class ChildUpdate(BaseModel):
+    name: Optional[str] = None
+    gender: Optional[str] = None
+    grade: Optional[str] = None
+
+
 # ---------- Progress (завършени уроци) ----------
 
 class CompletedLesson(BaseModel):

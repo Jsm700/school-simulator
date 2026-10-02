@@ -4,11 +4,11 @@
 // семейството и вижда точки, дневник, и статуса на днешните задачи за всяко.
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
-import { getLinkedDevice, listChildren, BACKEND_URL } from "../services/deviceLink";
+import { getLinkedDevice, listChildren, updateChild, enterChildView, BACKEND_URL } from "../services/deviceLink";
 import { ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 
 const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === value) || {}).label || value;
@@ -38,23 +38,30 @@ async function toggleHomeworkDone(childId, homeworkId) {
   await fetch(`${BACKEND_URL}/children/${childId}/homework/${homeworkId}/toggle-done`, { method: "POST" });
 }
 
-export default function ParentDashboardScreen() {
+export default function ParentDashboardScreen({ onEnterChildView }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [children, setChildren] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [childData, setChildData] = useState(null);
   const [loadingChild, setLoadingChild] = useState(false);
+  const [link, setLink] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editGender, setEditGender] = useState("male");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [switchingChild, setSwitchingChild] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const link = await getLinkedDevice();
-    if (!link || !link.familyId) {
+    const l = await getLinkedDevice();
+    setLink(l);
+    if (!l || !l.familyId) {
       setLoading(false);
       return;
     }
     try {
-      const list = await listChildren(link.familyId);
+      const list = await listChildren(l.familyId);
       setChildren(list);
       if (list.length > 0) setSelectedId(list[0].id);
     } catch (e) {
@@ -83,6 +90,59 @@ export default function ParentDashboardScreen() {
       fetchChildData(selectedId).then(setChildData); // при грешка — презареди истинското състояние
     }
   }, [selectedId]);
+
+  const selectedChildForEdit = children.find((c) => c.id === selectedId);
+
+  const startEditing = useCallback(() => {
+    if (!selectedChildForEdit) return;
+    setEditName(selectedChildForEdit.name);
+    setEditGender(selectedChildForEdit.gender || "male");
+    setEditing(true);
+  }, [selectedChildForEdit]);
+
+  const saveEdit = useCallback(async () => {
+    if (!link || !selectedId || !editName.trim()) return;
+    setSavingEdit(true);
+    try {
+      const updated = await updateChild(link.familyId, selectedId, {
+        name: editName.trim(),
+        gender: editGender,
+      });
+      setChildren((prev) => prev.map((c) => (c.id === selectedId ? { ...c, ...updated } : c)));
+      setEditing(false);
+    } catch (e) {
+      console.error("saveEdit error:", e);
+      Alert.alert("Грешка", "Не успях да запазя промените. Опитай пак.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [link, selectedId, editName, editGender]);
+
+  const handleEnterChildView = useCallback(() => {
+    if (!link || !selectedChildForEdit) return;
+    Alert.alert(
+      `Влез като ${selectedChildForEdit.name}?`,
+      "Устройството временно ще се превключи в детски изглед. Ще можеш да се върнеш тук през бутона в менюто на детето.",
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Влез",
+          onPress: async () => {
+            setSwitchingChild(true);
+            try {
+              await enterChildView(link, selectedChildForEdit);
+              if (onEnterChildView) await onEnterChildView();
+            } catch (e) {
+              console.error("enterChildView error:", e);
+              Alert.alert("Грешка", "Не успях да превключа. Опитай пак.");
+            } finally {
+              setSwitchingChild(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [link, selectedChildForEdit, onEnterChildView]);
 
   if (loading) {
     return (
@@ -126,17 +186,67 @@ export default function ParentDashboardScreen() {
       </View>
 
       {selectedChild && (
-        <TouchableOpacity
-          style={styles.scheduleLink}
-          onPress={() =>
-            router.push({
-              pathname: "/schedule-settings",
-              params: { childId: selectedChild.id, childName: selectedChild.name },
-            })
-          }
-        >
-          <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график — {selectedChild.name}</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={styles.scheduleLink}
+            onPress={() =>
+              router.push({
+                pathname: "/schedule-settings",
+                params: { childId: selectedChild.id, childName: selectedChild.name },
+              })
+            }
+          >
+            <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график — {selectedChild.name}</Text>
+          </TouchableOpacity>
+
+          <View style={styles.actionsRow}>
+            <TouchableOpacity style={styles.actionLink} onPress={startEditing}>
+              <Text style={styles.scheduleLinkText}>✏️ Редактирай име/пол</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionLink} onPress={handleEnterChildView} disabled={switchingChild}>
+              <Text style={styles.scheduleLinkText}>
+                {switchingChild ? "..." : `🧒 Влез като ${selectedChild.name}`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {editing && (
+            <View style={styles.editCard}>
+              <Text style={styles.cardTitle}>Редакция на профила</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Име на детето"
+                value={editName}
+                onChangeText={setEditName}
+              />
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={[styles.pill, editGender === "male" && styles.pillActive]}
+                  onPress={() => setEditGender("male")}
+                >
+                  <Text style={[styles.pillText, editGender === "male" && styles.pillTextActive]}>Момче</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pill, editGender === "female" && styles.pillActive]}
+                  onPress={() => setEditGender("female")}
+                >
+                  <Text style={[styles.pillText, editGender === "female" && styles.pillTextActive]}>Момиче</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.row}>
+                <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={saveEdit} disabled={savingEdit}>
+                  <Text style={styles.smallBtnText}>{savingEdit ? "Запазвам..." : "💾 Запази"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.cancelBtn, { flex: 1 }]}
+                  onPress={() => setEditing(false)}
+                >
+                  <Text style={styles.smallBtnText}>Отказ</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </>
       )}
 
       {loadingChild || !childData ? (
@@ -289,6 +399,33 @@ const styles = StyleSheet.create({
   importLink: { fontSize: 13, color: colors.primary, marginTop: spacing.xs },
   scheduleLink: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   scheduleLinkText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+  actionsRow: {
+    flexDirection: "row", flexWrap: "wrap", gap: spacing.lg,
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
+  },
+  actionLink: {},
+  editCard: {
+    marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: spacing.lg,
+    backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 0.5, borderColor: colors.border,
+  },
+  input: {
+    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, padding: spacing.md, fontSize: 15, marginBottom: spacing.md,
+  },
+  row: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  pill: {
+    flex: 1, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.full,
+    padding: spacing.sm, alignItems: "center",
+  },
+  pillActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  pillText: { color: colors.muted, fontSize: 14 },
+  pillTextActive: { color: colors.primaryDark, fontWeight: "700" },
+  smallBtn: {
+    backgroundColor: colors.primaryLight, borderRadius: radius.md,
+    padding: spacing.md, alignItems: "center",
+  },
+  cancelBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+  smallBtnText: { color: colors.primaryDark, fontSize: 14, fontWeight: "600" },
   childSwitcher: {
     flexDirection: "row", flexWrap: "wrap", gap: spacing.sm,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,

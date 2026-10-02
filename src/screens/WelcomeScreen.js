@@ -15,7 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
 import { getTotalPoints, resetPoints } from "../services/points";
-import { getLinkedDevice, unlinkDevice } from "../services/deviceLink";
+import { getLinkedDevice, unlinkDevice, isInChildViewFromParent, exitChildView } from "../services/deviceLink";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -97,7 +97,18 @@ function Picker({ label, options, value, onChange }) {
   );
 }
 
-export default function WelcomeScreen({ navigation, onDisconnect }) {
+export default function WelcomeScreen({ navigation, onDisconnect, onExitChildView }) {
+  const [viewingFromParent, setViewingFromParent] = useState(false);
+
+  React.useEffect(() => {
+    isInChildViewFromParent().then(setViewingFromParent);
+  }, []);
+
+  const handleExitChildView = React.useCallback(async () => {
+    const parentLink = await exitChildView();
+    if (parentLink && onExitChildView) onExitChildView();
+  }, [onExitChildView]);
+
   const [classVal, setClassVal] = useState("4");
   const [subject, setSubject] = useState("human_nature");
   const [publisher, setPublisher] = useState("klett");
@@ -417,9 +428,15 @@ returnKeyType="done"
           <TouchableOpacity style={styles.scheduleLink} onPress={handleResetPoints}>
             <Text style={styles.resetPointsText}>🔄 Занули точките</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.scheduleLink} onPress={handleDisconnect}>
-            <Text style={styles.resetPointsText}>🔌 Разкачи устройството</Text>
-          </TouchableOpacity>
+          {viewingFromParent ? (
+            <TouchableOpacity style={styles.scheduleLink} onPress={handleExitChildView}>
+              <Text style={styles.scheduleLinkText}>👪 Обратно към родителски изглед</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.scheduleLink} onPress={handleDisconnect}>
+              <Text style={styles.resetPointsText}>🔌 Разкачи устройството</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Lessons */}

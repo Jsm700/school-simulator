@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export const BACKEND_URL = "https://school-simulator-backend.onrender.com";
 
 const STORAGE_KEY_LINK = "device_link"; // { role: "parent"|"child", familyId, familyCode, childId? }
+const STORAGE_KEY_PARENT_BACKUP = "parent_link_backup"; // родителски link, запазен докато родителят "влиза като" дете
 
 export async function getLinkedDevice() {
   try {
@@ -93,4 +94,56 @@ export async function addChild(familyId, { name, gender, grade }) {
 
 export async function listChildren(familyId) {
   return get(`/families/${familyId}/children`);
+}
+
+export async function updateChild(familyId, childId, updates) {
+  const res = await fetch(`${BACKEND_URL}/families/${familyId}/children/${childId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`PATCH child -> ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+// Родителското устройство "влиза" временно в детски изглед за дадено дете —
+// пази оригиналния родителски link настрана, за да може да се върне обратно
+// без деинсталиране/повторно въвеждане на семейния код.
+export async function enterChildView(parentLink, child) {
+  await AsyncStorage.setItem(STORAGE_KEY_PARENT_BACKUP, JSON.stringify(parentLink));
+  await saveLinkedDevice({
+    role: "child",
+    familyId: parentLink.familyId,
+    familyCode: parentLink.familyCode,
+    childId: child.id,
+    childName: child.name,
+    childGender: child.gender,
+    childGrade: child.grade,
+  });
+}
+
+export async function isInChildViewFromParent() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_PARENT_BACKUP);
+    return !!raw;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function exitChildView() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY_PARENT_BACKUP);
+    if (!raw) return null;
+    const parentLink = JSON.parse(raw);
+    await saveLinkedDevice(parentLink);
+    await AsyncStorage.removeItem(STORAGE_KEY_PARENT_BACKUP);
+    return parentLink;
+  } catch (e) {
+    console.error("deviceLink.exitChildView error:", e);
+    return null;
+  }
 }

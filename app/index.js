@@ -53,8 +53,14 @@ export default function Index() {
   }
 
   if (linked.role === "parent") {
-    return <ParentDashboardScreen />;
+    return <ParentDashboardScreen onEnterChildView={check} />;
   }
 
-  return <WelcomeScreen navigation={navigation} onDisconnect={() => setLinked(null)} />;
+  return (
+    <WelcomeScreen
+      navigation={navigation}
+      onDisconnect={() => setLinked(null)}
+      onExitChildView={check}
+    />
+  );
 }

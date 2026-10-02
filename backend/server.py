@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from models import (
-    Family, Child, ChildCreate, CompletedLesson, PointsLogEntry,
+    Family, Child, ChildCreate, ChildUpdate, CompletedLesson, PointsLogEntry,
     AwardPointsRequest, StreakData, SceneProgress, SceneProgressUpdate,
     WeeklySchedule, DailyTaskSnapshot, HomeworkEntry, HomeworkImportRequest, HomeworkCheckRequest,
     HomeworkCheckLog, NotebookEntry, NotebookCheckRequest,
@@ -100,6 +100,18 @@ async def add_child(family_id: str, payload: ChildCreate):
 async def list_children(family_id: str):
     children = await db.children.find({"family_id": family_id}, {"_id": 0}).to_list(50)
     return children
+
+
+@app.patch("/families/{family_id}/children/{child_id}")
+async def update_child(family_id: str, child_id: str, payload: ChildUpdate):
+    child = await db.children.find_one({"id": child_id, "family_id": family_id})
+    if not child:
+        raise HTTPException(404, "Детето не е намерено")
+    updates = {k: v for k, v in payload.dict().items() if v is not None}
+    if updates:
+        await db.children.update_one({"id": child_id}, {"$set": updates})
+    updated = await db.children.find_one({"id": child_id}, {"_id": 0})
+    return updated
 
 
 # ---------------- Progress ----------------
