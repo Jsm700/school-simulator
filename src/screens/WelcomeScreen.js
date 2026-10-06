@@ -15,7 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
 import { getTotalPoints, resetPoints } from "../services/points";
-import { getLinkedDevice, unlinkDevice, isInChildViewFromParent, exitChildView } from "../services/deviceLink";
+import { getLinkedDevice, unlinkDevice, isInChildViewFromParent, exitChildView, syncLinkedChildProfile } from "../services/deviceLink";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -232,6 +232,24 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
 
   React.useEffect(() => {
     (async () => {
+      // Първо link-ът (локален и бърз) — за свързано дете той е единственият източник на истина,
+      // а старите AsyncStorage стойности (напр. "Тони"/male) не бива да го засенчват.
+      const link = await getLinkedDevice();
+      if (link && link.role === "child" && link.childName) {
+        setStudentName(link.childName);
+        setStudentGender(link.childGender || "male");
+        setIsLinkedChild(true);
+        if (link.familyCode) setFamilyCode(link.familyCode);
+        // Освежаване от сървъра (напр. родителят е сменил име/пол) и синхрон на student_* ключовете
+        syncLinkedChildProfile().then((p) => {
+          if (p && p.name) {
+            setStudentName(p.name);
+            setStudentGender(p.gender || "male");
+          }
+        });
+        return;
+      }
+      if (link && link.familyCode) setFamilyCode(link.familyCode);
       try {
         const savedName = await AsyncStorage.getItem(STORAGE_KEY_NAME);
         const savedGender = await AsyncStorage.getItem(STORAGE_KEY_GENDER);
@@ -239,17 +257,6 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
         if (savedGender) setStudentGender(savedGender);
       } catch (e) {
         console.error("AsyncStorage load error:", e);
-      }
-      // Ако устройството вече е свързано като конкретно дете (през семейния код),
-      // името/полът вече са известни от там — не питаме повторно.
-      const link = await getLinkedDevice();
-      if (link && link.role === "child" && link.childName) {
-        setStudentName(link.childName);
-        setStudentGender(link.childGender || "male");
-        setIsLinkedChild(true);
-        if (link.familyCode) setFamilyCode(link.familyCode);
-      } else if (link && link.familyCode) {
-        setFamilyCode(link.familyCode);
       }
     })();
   }, []);

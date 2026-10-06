@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLessons } from "../data/lessons";
 import { getSchedule, getSubjectsForDate, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { getCompletedLessons } from "../services/progress";
+import { syncLinkedChildProfile } from "../services/deviceLink";
 import { getSnapshotForDate, saveSnapshotForDate } from "../services/dailyTasks";
 import { getSceneProgress } from "../services/sceneProgress";
 import { colors, spacing, radius } from "../theme";
@@ -64,6 +65,7 @@ export default function DnesScreen({ navigation }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      await syncLinkedChildProfile(); // освежава student_name/student_gender от профила на детето
       const [schedule, completed, kvIndex, savedName, savedGender, savedClass, publisherMapRaw, snapshot] =
         await Promise.all([
           getSchedule(),

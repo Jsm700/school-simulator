@@ -109,6 +109,39 @@ export async function updateChild(familyId, childId, updates) {
   return res.json();
 }
 
+// Синхронизира локално кешираните име/пол на детето с истината от сървъра и ги
+// записва в AsyncStorage ключовете, които ползват Днес/Quiz/Revive екраните
+// ("student_name"/"student_gender"). Без това, за свързано дете тези ключове
+// остават празни и Днес екранът пада на "Тони"/"male".
+export async function syncLinkedChildProfile() {
+  const link = await getLinkedDevice();
+  if (!link || link.role !== "child") return null;
+  let name = link.childName;
+  let gender = link.childGender;
+  let grade = link.childGrade;
+  if (link.familyId && link.childId) {
+    try {
+      const list = await listChildren(link.familyId);
+      const fresh = list.find((c) => c.id === link.childId);
+      if (fresh) {
+        name = fresh.name;
+        gender = fresh.gender;
+        grade = fresh.grade;
+        if (fresh.name !== link.childName || fresh.gender !== link.childGender || fresh.grade !== link.childGrade) {
+          await saveLinkedDevice({ ...link, childName: name, childGender: gender, childGrade: grade });
+        }
+      }
+    } catch (e) {
+      // няма мрежа — ползваме кешираното от link-а
+    }
+  }
+  try {
+    if (name) await AsyncStorage.setItem("student_name", name);
+    if (gender) await AsyncStorage.setItem("student_gender", gender);
+  } catch (e) {}
+  return { name, gender, grade };
+}
+
 // Родителското устройство "влиза" временно в детски изглед за дадено дете —
 // пази оригиналния родителски link настрана, за да може да се върне обратно
 // без деинсталиране/повторно въвеждане на семейния код.
