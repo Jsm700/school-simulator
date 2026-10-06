@@ -125,6 +125,7 @@ class HomeworkEntry(BaseModel):
     task_text: str = ""
     due_date: str = ""
     done: bool = False
+    archived: bool = False  # архивирано от родителя — не се показва и не влиза в статистиките
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

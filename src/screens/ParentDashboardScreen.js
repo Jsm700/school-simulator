@@ -34,6 +34,21 @@ async function fetchChildData(childId) {
   };
 }
 
+async function archiveHomework(childId, homeworkId) {
+  const res = await fetch(`${BACKEND_URL}/children/${childId}/homework/${homeworkId}/archive`, { method: "POST" });
+  if (!res.ok) throw new Error(`archive -> ${res.status}`);
+}
+
+async function archiveHomeworkBulk(childId, scope) {
+  const res = await fetch(`${BACKEND_URL}/children/${childId}/homework/archive-bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope }),
+  });
+  if (!res.ok) throw new Error(`archive-bulk -> ${res.status}`);
+  return res.json();
+}
+
 async function toggleHomeworkDone(childId, homeworkId) {
   await fetch(`${BACKEND_URL}/children/${childId}/homework/${homeworkId}/toggle-done`, { method: "POST" });
 }
@@ -89,6 +104,45 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
       console.error("toggle homework error:", e);
       fetchChildData(selectedId).then(setChildData); // при грешка — презареди истинското състояние
     }
+  }, [selectedId]);
+
+  const handleArchiveHomework = useCallback(async (homeworkId) => {
+    if (!selectedId) return;
+    setChildData((prev) => prev && { ...prev, homework: prev.homework.filter((h) => h.id !== homeworkId) });
+    try {
+      await archiveHomework(selectedId, homeworkId);
+      fetchChildData(selectedId).then(setChildData); // освежава и статистиката
+    } catch (e) {
+      console.error("archive homework error:", e);
+      Alert.alert("Грешка", "Не успях да архивирам домашното. Опитай пак.");
+      fetchChildData(selectedId).then(setChildData);
+    }
+  }, [selectedId]);
+
+  const handleArchiveBulk = useCallback((scope) => {
+    if (!selectedId) return;
+    const title = scope === "overdue" ? "Архивирай просрочените?" : "Архивирай всички чакащи?";
+    const msg = scope === "overdue"
+      ? "Всички чакащи домашни с минал срок ще се скрият от списъка и статистиката."
+      : "Всички чакащи домашни ще се скрият от списъка и статистиката. Новите, които добавиш после, ще се показват нормално.";
+    Alert.alert(title, msg, [
+      { text: "Отказ", style: "cancel" },
+      {
+        text: "Архивирай",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const r = await archiveHomeworkBulk(selectedId, scope);
+            const fresh = await fetchChildData(selectedId);
+            setChildData(fresh);
+            Alert.alert("Готово", `Архивирани: ${r.archived_count}`);
+          } catch (e) {
+            console.error("archive bulk error:", e);
+            Alert.alert("Грешка", "Не успях да архивирам. Опитай пак.");
+          }
+        },
+      },
+    ]);
   }, [selectedId]);
 
   const selectedChildForEdit = children.find((c) => c.id === selectedId);
@@ -321,24 +375,38 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>📚 Домашни (чакащи)</Text>
+            {childData.homework.length > 0 && (
+              <View style={styles.bulkRow}>
+                <TouchableOpacity onPress={() => handleArchiveBulk("overdue")}>
+                  <Text style={styles.scheduleLinkText}>🗄 Архивирай просрочените</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleArchiveBulk("all_pending")}>
+                  <Text style={styles.scheduleLinkText}>🗄 Архивирай всички</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {childData.homework.length === 0 ? (
               <Text style={styles.mutedText}>Няма внесени чакащи домашни.</Text>
             ) : (
               childData.homework.map((hw) => (
-                <TouchableOpacity
-                  key={hw.id}
-                  style={styles.homeworkRow}
-                  onPress={() => handleToggleHomework(hw.id)}
-                >
-                  <Text style={{ fontSize: 16 }}>⬜</Text>
-                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={styles.taskSubject}>{hw.subject || "(предмет?)"}</Text>
-                      {hw.due_date ? <Text style={styles.mutedText}>срок: {hw.due_date}</Text> : null}
+                <View key={hw.id} style={styles.homeworkRow}>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: "row", alignItems: "flex-start" }}
+                    onPress={() => handleToggleHomework(hw.id)}
+                  >
+                    <Text style={{ fontSize: 16 }}>⬜</Text>
+                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={styles.taskSubject}>{hw.subject || "(предмет?)"}</Text>
+                        {hw.due_date ? <Text style={styles.mutedText}>срок: {hw.due_date}</Text> : null}
+                      </View>
+                      <Text style={styles.homeworkText}>{hw.task_text}</Text>
                     </View>
-                    <Text style={styles.homeworkText}>{hw.task_text}</Text>
-                  </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.archiveBtn} onPress={() => handleArchiveHomework(hw.id)}>
+                    <Text style={{ fontSize: 16 }}>🗄</Text>
+                  </TouchableOpacity>
+                </View>
               ))
             )}
           </View>
@@ -451,6 +519,8 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "flex-start", paddingVertical: spacing.sm,
     borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
+  bulkRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, marginBottom: spacing.sm },
+  archiveBtn: { paddingLeft: spacing.md, paddingVertical: spacing.xs },
   homeworkText: { fontSize: 13, color: colors.text, marginTop: 2 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   statBox: {

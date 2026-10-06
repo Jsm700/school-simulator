@@ -494,7 +494,7 @@ async def import_homework(child_id: str, payload: HomeworkImportRequest):
 
 @app.get("/children/{child_id}/homework")
 async def list_homework(child_id: str, done: str = None):
-    query = {"child_id": child_id}
+    query = {"child_id": child_id, "archived": {"$ne": True}}
     if done is not None:
         query["done"] = done.lower() == "true"
     rows = await db.homework.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -509,6 +509,39 @@ async def toggle_homework_done(child_id: str, homework_id: str):
     new_done = not row.get("done", False)
     await db.homework.update_one({"id": homework_id}, {"$set": {"done": new_done}})
     return {"ok": True, "done": new_done}
+
+
+@app.post("/children/{child_id}/homework/{homework_id}/archive")
+async def archive_homework(child_id: str, homework_id: str):
+    res = await db.homework.update_one(
+        {"id": homework_id, "child_id": child_id}, {"$set": {"archived": True}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Домашното не е намерено")
+    return {"ok": True}
+
+
+@app.post("/children/{child_id}/homework/archive-bulk")
+async def archive_homework_bulk(child_id: str, payload: dict):
+    """scope: "overdue" (чакащи с минал срок) или "all_pending" (всички чакащи)."""
+    scope = (payload or {}).get("scope", "overdue")
+    if scope not in ("overdue", "all_pending"):
+        raise HTTPException(400, "Невалиден scope")
+    pending = await db.homework.find(
+        {"child_id": child_id, "done": {"$ne": True}, "archived": {"$ne": True}}, {"_id": 0}
+    ).to_list(2000)
+    today = datetime.utcnow().date()
+    ids = []
+    for h in pending:
+        if scope == "all_pending":
+            ids.append(h["id"])
+        else:
+            due = _try_parse_bg_date(h.get("due_date", ""))
+            if due and due.date() < today:
+                ids.append(h["id"])
+    if ids:
+        await db.homework.update_many({"id": {"$in": ids}}, {"$set": {"archived": True}})
+    return {"ok": True, "archived_count": len(ids)}
 
 
 @app.post("/children/{child_id}/homework/{homework_id}/check")
@@ -632,7 +665,7 @@ async def homework_stats(child_id: str):
     now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
 
-    all_hw = await db.homework.find({"child_id": child_id}, {"_id": 0}).to_list(2000)
+    all_hw = await db.homework.find({"child_id": child_id, "archived": {"$ne": True}}, {"_id": 0}).to_list(2000)
     checks = await db.homework_checks.find({"child_id": child_id}, {"_id": 0}).to_list(4000)
 
     pending = [h for h in all_hw if not h.get("done")]
