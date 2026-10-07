@@ -4,7 +4,7 @@
 // семейството и вижда точки, дневник, и статуса на днешните задачи за всяко.
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking, Alert, AppState } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking, Alert, AppState, Modal, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
@@ -27,13 +27,14 @@ const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === v
 
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
     fetch(`${BACKEND_URL}/children/${childId}/homework?done=false`).then((r) => r.json()).catch(() => []),
     fetch(`${BACKEND_URL}/children/${childId}/homework/stats`).then((r) => r.json()).catch(() => null),
     fetch(`${BACKEND_URL}/children/${childId}/notebook`).then((r) => r.json()).catch(() => []),
+    fetch(`${BACKEND_URL}/children/${childId}/homework/checks?limit=15`).then((r) => r.json()).catch(() => []),
   ]);
   return {
     total: pointsRes.total || 0,
@@ -43,6 +44,7 @@ async function fetchChildData(childId) {
     homework: Array.isArray(homeworkRes) ? homeworkRes : [],
     homeworkStats: statsRes,
     notebook: Array.isArray(notebookRes) ? notebookRes : [],
+    checks: Array.isArray(checksRes) ? checksRes : [],
   };
 }
 
@@ -78,6 +80,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
   const [editGender, setEditGender] = useState("male");
   const [savingEdit, setSavingEdit] = useState(false);
   const [switchingChild, setSwitchingChild] = useState(false);
+  const [checkDetail, setCheckDetail] = useState(null); // { loading, data }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +116,20 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
       if (state === "active") fetchChildData(selectedId).then(setChildData).catch(() => {});
     });
     return () => sub.remove();
+  }, [selectedId]);
+
+  const openCheckDetail = useCallback(async (checkId) => {
+    if (!selectedId) return;
+    setCheckDetail({ loading: true, data: null });
+    try {
+      const res = await fetch(`${BACKEND_URL}/children/${selectedId}/homework/checks/${checkId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setCheckDetail({ loading: false, data: await res.json() });
+    } catch (e) {
+      console.error("openCheckDetail error:", e);
+      setCheckDetail(null);
+      Alert.alert("Грешка", "Не успях да заредя проверката. Опитай пак.");
+    }
   }, [selectedId]);
 
   const handleToggleHomework = useCallback(async (homeworkId) => {
@@ -393,6 +410,24 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.cardTitle}>🧾 Последно проверени</Text>
+            {childData.checks.length === 0 ? (
+              <Text style={styles.mutedText}>Още няма проверени домашни.</Text>
+            ) : (
+              childData.checks.map((c) => (
+                <TouchableOpacity key={c.id} style={styles.checkRow} onPress={() => openCheckDetail(c.id)}>
+                  <Text style={{ fontSize: 16 }}>{c.passed ? "✅" : "🔁"}</Text>
+                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                    <Text style={styles.taskSubject}>{c.subject || "(предмет?)"} · {fmtIsoDM((c.checked_at || "").slice(0, 10))}</Text>
+                    <Text style={styles.taskTitle} numberOfLines={1}>{c.task_text}</Text>
+                  </View>
+                  <Text style={styles.mutedText}>›</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.cardTitle}>⭐ Общо точки</Text>
             <Text style={styles.pointsTotal}>{childData.total}</Text>
           </View>
@@ -479,6 +514,44 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
           </Text>
         </ScrollView>
       )}
+      <Modal visible={!!checkDetail} animationType="slide" onRequestClose={() => setCheckDetail(null)}>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.headerTitle}>🧾 Проверка на домашно</Text>
+            <TouchableOpacity onPress={() => setCheckDetail(null)}>
+              <Text style={styles.scheduleLinkText}>✕ Затвори</Text>
+            </TouchableOpacity>
+          </View>
+          {!checkDetail || checkDetail.loading || !checkDetail.data ? (
+            <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+              <Text style={styles.taskSubject}>
+                {checkDetail.data.subject || "(предмет?)"}
+                {checkDetail.data.due_date ? `  ·  срок: ${checkDetail.data.due_date}` : ""}
+              </Text>
+              <Text style={[styles.homeworkText, { marginBottom: spacing.md }]}>{checkDetail.data.task_text}</Text>
+
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                  {checkDetail.data.passed ? "✅ Прието" : "🔁 Не е прието още"}
+                  {"  ·  "}{fmtIsoDM((checkDetail.data.checked_at || "").slice(0, 10))}
+                </Text>
+                <Text style={styles.homeworkText}>{checkDetail.data.feedback || "Няма коментар."}</Text>
+              </View>
+
+              <Text style={[styles.cardTitle, { marginTop: spacing.sm }]}>📷 Изпратено от детето</Text>
+              {(checkDetail.data.images || []).length === 0 ? (
+                <Text style={styles.mutedText}>Снимката не е запазена (проверката е от преди тази функция).</Text>
+              ) : (
+                checkDetail.data.images.map((uri, i) => (
+                  <Image key={i} source={{ uri }} style={styles.checkImage} resizeMode="contain" />
+                ))
+              )}
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -553,6 +626,15 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "flex-start", paddingVertical: spacing.sm,
     borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
+  checkRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
+  },
+  modalHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border,
+  },
+  checkImage: { width: "100%", height: 420, marginTop: spacing.sm, backgroundColor: colors.card, borderRadius: radius.md },
   bulkRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, marginBottom: spacing.sm },
   archiveBtn: { paddingLeft: spacing.md, paddingVertical: spacing.xs },
   homeworkText: { fontSize: 13, color: colors.text, marginTop: 2 },

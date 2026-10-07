@@ -145,6 +145,7 @@ class HomeworkCheckLog(BaseModel):
     subject: str = ""
     passed: bool = False
     feedback: str = ""
+    images: List[str] = Field(default_factory=list)  # умалени JPEG data URL-и на изпратените снимки (за родителя)
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
 

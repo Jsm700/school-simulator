@@ -356,6 +356,24 @@ def _parse_data_url(data_url: str):
     return m.group(1), m.group(2)
 
 
+def _make_thumb(data_url: str, max_side: int = 1000, quality: int = 60) -> str:
+    """Умалява снимка до JPEG data URL (~80-150 KB) за пазене в базата. При проблем връща "" —
+    пазенето на снимка никога не бива да чупи проверката на домашното."""
+    try:
+        import base64
+        import io
+        from PIL import Image, ImageOps
+        _, b64 = _parse_data_url(data_url)
+        img = Image.open(io.BytesIO(base64.b64decode(b64)))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((max_side, max_side))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
 def _parse_verdict_json(raw_text: str) -> dict:
     """Разчита JSON обект {"passed": ..., "feedback": ...} от отговора на Claude,
     издържа на code fences, типографски кавички, и увод/следсловие покрай JSON-а
@@ -627,10 +645,11 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
     passed = bool(verdict.get("passed"))
     feedback = verdict.get("feedback", "")
 
+    thumbs = [t for t in (_make_thumb(img) for img in images) if t]
     await db.homework_checks.insert_one(
         HomeworkCheckLog(
             child_id=child_id, homework_id=homework_id, subject=subject,
-            passed=passed, feedback=feedback,
+            passed=passed, feedback=feedback, images=thumbs,
         ).dict()
     )
 
@@ -645,6 +664,32 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
         }
 
     return {"passed": False, "feedback": feedback, "points": 0}
+
+
+@app.get("/children/{child_id}/homework/checks")
+async def list_homework_checks(child_id: str, limit: int = 30):
+    """Последните проверки на домашни (без снимките — те се взимат при отваряне на детайл)."""
+    checks = await db.homework_checks.find(
+        {"child_id": child_id}, {"_id": 0, "images": 0}
+    ).sort("checked_at", -1).to_list(max(1, min(limit, 100)))
+    out = []
+    for c in checks:
+        hw = await db.homework.find_one({"id": c.get("homework_id")}, {"_id": 0}) or {}
+        out.append({
+            **c,
+            "task_text": hw.get("task_text", ""),
+            "due_date": hw.get("due_date", ""),
+        })
+    return out
+
+
+@app.get("/children/{child_id}/homework/checks/{check_id}")
+async def get_homework_check(child_id: str, check_id: str):
+    c = await db.homework_checks.find_one({"id": check_id, "child_id": child_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(404, "Проверката не е намерена")
+    hw = await db.homework.find_one({"id": c.get("homework_id")}, {"_id": 0}) or {}
+    return {**c, "task_text": hw.get("task_text", ""), "due_date": hw.get("due_date", "")}
 
 
 def _try_parse_bg_date(s: str):
