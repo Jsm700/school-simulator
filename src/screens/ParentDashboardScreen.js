@@ -9,7 +9,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { getLinkedDevice, listChildren, updateChild, enterChildView, BACKEND_URL } from "../services/deviceLink";
-import { ALL_SCHOOL_SUBJECTS } from "../services/schedule";
+import { ALL_SCHOOL_SUBJECTS, getSubjectsForDate } from "../services/schedule";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const fmtDM = (d) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
@@ -27,7 +27,7 @@ const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === v
 
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes, scheduleRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
@@ -35,12 +35,14 @@ async function fetchChildData(childId) {
     fetch(`${BACKEND_URL}/children/${childId}/homework/stats`).then((r) => r.json()).catch(() => null),
     fetch(`${BACKEND_URL}/children/${childId}/notebook`).then((r) => r.json()).catch(() => []),
     fetch(`${BACKEND_URL}/children/${childId}/homework/checks?limit=15`).then((r) => r.json()).catch(() => []),
+    fetch(`${BACKEND_URL}/children/${childId}/schedule`).then((r) => r.json()).catch(() => ({})),
   ]);
   return {
     total: pointsRes.total || 0,
     log: pointsRes.log || [],
     completed: progressRes.completed_kv_keys || [],
     todayAssignments: tasksRes.assignments || {},
+    todaySubjects: getSubjectsForDate((scheduleRes && typeof scheduleRes === "object" && !Array.isArray(scheduleRes)) ? scheduleRes : {}, new Date()),
     homework: Array.isArray(homeworkRes) ? homeworkRes : [],
     homeworkStats: statsRes,
     notebook: Array.isArray(notebookRes) ? notebookRes : [],
@@ -355,10 +357,32 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Днес · {fmtDM(new Date())}</Text>
-            {Object.keys(childData.todayAssignments).length === 0 ? (
-              <Text style={styles.mutedText}>Няма зададени задачи за днес още.</Text>
-            ) : (
-              Object.entries(childData.todayAssignments).map(([subject, lesson]) => {
+            {(() => {
+              const assignments = childData.todayAssignments || {};
+              const scheduled = childData.todaySubjects || [];
+              const subjects = [...scheduled];
+              Object.keys(assignments).forEach((sub) => {
+                if (!subjects.includes(sub)) subjects.push(sub);
+              });
+              if (subjects.length === 0) {
+                return <Text style={styles.mutedText}>Няма предмети в графика за днес.</Text>;
+              }
+              return subjects.map((subject) => {
+                const lesson = assignments[subject];
+                if (!lesson) {
+                  const hasContent = (ALL_SCHOOL_SUBJECTS.find((s) => s.value === subject) || {}).hasContent;
+                  return (
+                    <View key={subject} style={[styles.taskRow, { opacity: 0.6 }]}>
+                      <Text style={{ fontSize: 16 }}>{hasContent ? "⏳" : "▫️"}</Text>
+                      <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                        <Text style={styles.taskSubject}>{subjectLabelOf(subject)}</Text>
+                        <Text style={styles.mutedText}>
+                          {hasContent ? "Урокът още не е зададен (детето не е отваряло „Днес“)" : "Няма уроци в приложението"}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                }
                 const done = childData.completed.includes(lesson.kvKey || lesson.kv_key);
                 return (
                   <View key={subject} style={styles.taskRow}>
@@ -369,8 +393,8 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                     </View>
                   </View>
                 );
-              })
-            )}
+              });
+            })()}
           </View>
 
           <View style={styles.card}>
