@@ -168,6 +168,7 @@ export const SUBJECT_OPTIONS = [
   { value: "physics", label: "Физика и астрономия" },
   { value: "chemistry", label: "Химия и опазване на околната среда" },
   { value: "english", label: "Английски език" },
+  { value: "bulgarian", label: "Български език и литература" },
 ];
 
 export const PUBLISHER_OPTIONS = [
