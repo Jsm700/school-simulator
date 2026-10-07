@@ -887,7 +887,7 @@ document.getElementById('pasteZone').addEventListener('paste', (e) => {
   }
 });
 
-async function loadChildren() {
+async function loadChildren(preselectChildId) {
   const code = document.getElementById('familyCode').value.trim().toUpperCase();
   if (!code) return;
   const res = await fetch(`${BASE}/families/join`, {
@@ -902,10 +902,22 @@ async function loadChildren() {
   children = data.children;
   const sel = document.getElementById('childSelect');
   sel.innerHTML = children.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  if (typeof preselectChildId === 'string' && children.some(c => c.id === preselectChildId)) {
+    sel.value = preselectChildId;
+  }
   document.getElementById('childCard').style.display = 'block';
   document.getElementById('uploadCard').style.display = 'block';
   clearResults();
 }
+
+// Когато страницата е отворена от приложението, кодът и детето идват в линка — не се питат повторно
+(function autoLoadFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (!code) return;
+  document.getElementById('familyCode').value = code.toUpperCase();
+  loadChildren(params.get('child') || undefined);
+})();
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -942,6 +954,7 @@ async function doImport() {
     let html = `<div class="card"><b>${childName}</b> — намерени ${data.added.length} нови`;
     if (data.skipped_duplicates) html += `, ${data.skipped_duplicates} вече бяха внесени`;
     html += `</div>`;
+    html += `<div class="card" style="background:#EAF6EA"><b>✅ Готово.</b> Върни се в приложението (бутона за последно отворени приложения) — списъкът ще се опресни сам.</div>`;
     for (const hw of data.added) {
       html += `<div class="card"><div class="row"><b>${hw.subject || '(предмет?)'}</b><span class="muted">срок: ${hw.due_date || '?'}</span></div><div>${hw.task_text}</div></div>`;
     }

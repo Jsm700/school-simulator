@@ -4,12 +4,24 @@
 // семейството и вижда точки, дневник, и статуса на днешните задачи за всяко.
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking, Alert, AppState } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { getLinkedDevice, listChildren, updateChild, enterChildView, BACKEND_URL } from "../services/deviceLink";
 import { ALL_SCHOOL_SUBJECTS } from "../services/schedule";
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const fmtDM = (d) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
+const fmtIsoDM = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}.${m[2]}` : iso;
+};
+const logKindIcon = (key) => {
+  if ((key || "").startsWith("notebook_")) return "📓";
+  if ((key || "").startsWith("homework_")) return "📚";
+  return "🎓";
+};
 
 const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === value) || {}).label || value;
 
@@ -92,6 +104,15 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
     if (!selectedId) return;
     setLoadingChild(true);
     fetchChildData(selectedId).then(setChildData).finally(() => setLoadingChild(false));
+  }, [selectedId]);
+
+  // Връщане в приложението (напр. от браузъра след импорт на домашни) — опреснява данните сам
+  useEffect(() => {
+    if (!selectedId) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") fetchChildData(selectedId).then(setChildData).catch(() => {});
+    });
+    return () => sub.remove();
   }, [selectedId]);
 
   const handleToggleHomework = useCallback(async (homeworkId) => {
@@ -220,7 +241,14 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>👪 Родителски изглед</Text>
-        <TouchableOpacity onPress={() => Linking.openURL(`${BACKEND_URL}/import`)}>
+        <TouchableOpacity
+          onPress={() => {
+            const q = link && link.familyCode
+              ? `?code=${encodeURIComponent(link.familyCode)}${selectedId ? `&child=${encodeURIComponent(selectedId)}` : ""}`
+              : "";
+            Linking.openURL(`${BACKEND_URL}/import${q}`);
+          }}
+        >
           <Text style={styles.importLink}>📷 Импортирай домашни от Школо (отваря се в браузъра)</Text>
         </TouchableOpacity>
       </View>
@@ -241,25 +269,24 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
 
       {selectedChild && (
         <>
-          <TouchableOpacity
-            style={styles.scheduleLink}
-            onPress={() =>
-              router.push({
-                pathname: "/schedule-settings",
-                params: { childId: selectedChild.id, childName: selectedChild.name },
-              })
-            }
-          >
-            <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график — {selectedChild.name}</Text>
-          </TouchableOpacity>
-
-          <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.actionLink} onPress={startEditing}>
-              <Text style={styles.scheduleLinkText}>✏️ Редактирай име/пол</Text>
+          <View style={styles.actionsBar}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() =>
+                router.push({
+                  pathname: "/schedule-settings",
+                  params: { childId: selectedChild.id, childName: selectedChild.name },
+                })
+              }
+            >
+              <Text style={styles.actionBtnText}>⚙️ График</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionLink} onPress={handleEnterChildView} disabled={switchingChild}>
-              <Text style={styles.scheduleLinkText}>
-                {switchingChild ? "..." : `🧒 Влез като ${selectedChild.name}`}
+            <TouchableOpacity style={styles.actionBtn} onPress={startEditing}>
+              <Text style={styles.actionBtnText}>✏️ Име/пол</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} onPress={handleEnterChildView} disabled={switchingChild}>
+              <Text style={styles.actionBtnText}>
+                {switchingChild ? "..." : `${selectedChild.gender === "female" ? "👧" : "👦"} Влез като ${selectedChild.name}`}
               </Text>
             </TouchableOpacity>
           </View>
@@ -310,12 +337,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>⭐ Общо точки</Text>
-            <Text style={styles.pointsTotal}>{childData.total}</Text>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>📅 Днес</Text>
+            <Text style={styles.cardTitle}>Днес · {fmtDM(new Date())}</Text>
             {Object.keys(childData.todayAssignments).length === 0 ? (
               <Text style={styles.mutedText}>Няма зададени задачи за днес още.</Text>
             ) : (
@@ -332,6 +354,47 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                 );
               })
             )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📚 Домашни (чакащи)</Text>
+            {childData.homework.length > 0 && (
+              <View style={styles.bulkRow}>
+                <TouchableOpacity onPress={() => handleArchiveBulk("overdue")}>
+                  <Text style={styles.scheduleLinkText}>🗄 Архивирай просрочените</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleArchiveBulk("all_pending")}>
+                  <Text style={styles.scheduleLinkText}>🗄 Архивирай всички</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {childData.homework.length === 0 ? (
+              <Text style={styles.mutedText}>Няма внесени чакащи домашни.</Text>
+            ) : (
+              childData.homework.map((hw) => (
+                <View key={hw.id} style={styles.homeworkRow}>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: "row", alignItems: "flex-start" }}
+                    onPress={() => handleToggleHomework(hw.id)}
+                  >
+                    <Text style={{ fontSize: 16 }}>⬜</Text>
+                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                      <Text style={styles.taskSubject}>{hw.subject || "(предмет?)"}</Text>
+                      {hw.due_date ? <Text style={styles.mutedText}>срок: {hw.due_date}</Text> : null}
+                      <Text style={styles.homeworkText}>{hw.task_text}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.archiveBtn} onPress={() => handleArchiveHomework(hw.id)}>
+                    <Text style={{ fontSize: 16 }}>🗄</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>⭐ Общо точки</Text>
+            <Text style={styles.pointsTotal}>{childData.total}</Text>
           </View>
 
           {childData.homeworkStats && (
@@ -364,7 +427,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                   <Text style={[styles.mutedText, { marginBottom: spacing.xs }]}>По предмет (готови):</Text>
                   {Object.entries(childData.homeworkStats.by_subject).map(([subj, count]) => (
                     <View key={subj} style={styles.subjectRow}>
-                      <Text style={styles.taskTitle}>{subj}</Text>
+                      <Text style={styles.taskTitle}>{subj === "(без предмет)" ? "Други / неразпознат предмет" : subj}</Text>
                       <Text style={styles.taskSubject}>{count}</Text>
                     </View>
                   ))}
@@ -372,44 +435,6 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
               )}
             </View>
           )}
-
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>📚 Домашни (чакащи)</Text>
-            {childData.homework.length > 0 && (
-              <View style={styles.bulkRow}>
-                <TouchableOpacity onPress={() => handleArchiveBulk("overdue")}>
-                  <Text style={styles.scheduleLinkText}>🗄 Архивирай просрочените</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleArchiveBulk("all_pending")}>
-                  <Text style={styles.scheduleLinkText}>🗄 Архивирай всички</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {childData.homework.length === 0 ? (
-              <Text style={styles.mutedText}>Няма внесени чакащи домашни.</Text>
-            ) : (
-              childData.homework.map((hw) => (
-                <View key={hw.id} style={styles.homeworkRow}>
-                  <TouchableOpacity
-                    style={{ flex: 1, flexDirection: "row", alignItems: "flex-start" }}
-                    onPress={() => handleToggleHomework(hw.id)}
-                  >
-                    <Text style={{ fontSize: 16 }}>⬜</Text>
-                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={styles.taskSubject}>{hw.subject || "(предмет?)"}</Text>
-                        {hw.due_date ? <Text style={styles.mutedText}>срок: {hw.due_date}</Text> : null}
-                      </View>
-                      <Text style={styles.homeworkText}>{hw.task_text}</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.archiveBtn} onPress={() => handleArchiveHomework(hw.id)}>
-                    <Text style={{ fontSize: 16 }}>🗄</Text>
-                  </TouchableOpacity>
-                </View>
-              ))
-            )}
-          </View>
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>📓 Тетрадка</Text>
@@ -438,9 +463,9 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
             ) : (
               childData.log.slice(0, 20).map((entry, idx) => (
                 <View key={idx} style={styles.logRow}>
-                  <Text style={styles.logDate}>{entry.date}</Text>
-                  <Text style={styles.logTitle} numberOfLines={1}>
-                    {entry.lesson_title || entry.lesson_key}
+                  <Text style={styles.logDate}>{fmtIsoDM(entry.date)}</Text>
+                  <Text style={styles.logTitle} numberOfLines={2}>
+                    {logKindIcon(entry.lesson_key)} {entry.lesson_title || entry.lesson_key}
                     {entry.subject ? ` · ${subjectLabelOf(entry.subject)}` : ""}
                   </Text>
                   <Text style={styles.logPoints}>+{entry.points}</Text>
@@ -467,6 +492,15 @@ const styles = StyleSheet.create({
   importLink: { fontSize: 13, color: colors.primary, marginTop: spacing.xs },
   scheduleLink: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   scheduleLinkText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+  actionsBar: {
+    flexDirection: "row", flexWrap: "wrap", gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
+  },
+  actionBtn: {
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+    borderRadius: radius.full, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+  },
+  actionBtnText: { fontSize: 13, color: colors.primaryDark, fontWeight: "600" },
   actionsRow: {
     flexDirection: "row", flexWrap: "wrap", gap: spacing.lg,
     paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
