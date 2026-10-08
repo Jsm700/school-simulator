@@ -374,6 +374,193 @@ def _make_thumb(data_url: str, max_side: int = 1000, quality: int = 60) -> str:
         return ""
 
 
+def _prep_image_for_ai(data_url: str):
+    """Подготвя снимка за AI проверката: изправя я по EXIF, свива я до разумен размер и
+    изсветлява/вдига контраста (детските снимки често са тъмни). При проблем връща оригинала."""
+    try:
+        import base64
+        import io
+        from PIL import Image, ImageOps
+        media_type, b64 = _parse_data_url(data_url)
+        img = Image.open(io.BytesIO(base64.b64decode(b64)))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((2000, 2000))
+        img = ImageOps.autocontrast(img, cutoff=1)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        return "image/jpeg", base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return _parse_data_url(data_url)
+
+
+# Проверката по математика е на по-силния модел: на тест върху реално домашно (8 окт. 2026)
+# само той разчете и оцени вярно всяка подточка. Останалите проверки остават на по-евтиния.
+MATH_CHECK_MODEL = "claude-opus-5-5"
+
+MATH_CHECK_PROMPT = """Ти проверяваш домашно по математика на {who}. Заданието от електронния дневник е: "{task_text}".
+
+Приложени са снимки: някои показват печатното условие (страница от учебник или сборник), други — ръкописното решение на детето. Снимките може да са завъртени.
+
+Работи в този ред:
+
+1. КАЧЕСТВО НА СНИМКИТЕ. Прецени дали ръкописът се чете уверено. Ако някоя част е тъмна, размазана, снимана отдалече или под ъгъл, така че не можеш да разчетеш със сигурност цифри, знаци и степенни показатели — кажи го. НИКОГА не отгатвай нечетливо и не приемай, че "сигурно е вярно".
+
+2. КОИ ЗАДАЧИ СЕ ИСКАТ. От заданието и от снимките с условието направи списък на ВСИЧКИ поискани задачи и подточки (напр. "Опитай сам" на дадена страница означава всички номерирани задачи в тази рубрика, с всичките им подточки). Всяка подточка е отделен ред в списъка. Ако няма снимка на условието, работи по това, което детето е преписало, и го отбележи в качеството на снимките.
+
+3. ЗА ВСЯКА ПОДТОЧКА ПООТДЕЛНО, без изключения:
+   а) препиши условието от печатната страница;
+   б) РЕШИ Я САМ, независимо от написаното от детето, и запиши крайния верен отговор;
+   в) препиши точно какво е написало детето като краен отговор (ако не се чете — пиши "не се чете");
+   г) сравни и определи статус:
+      - "correct": крайният отговор на детето съвпада с твоя (еквивалентен запис е допустим) И отговаря на точно това, което се пита;
+      - "wrong": има грешка в пресмятането или крайният отговор е различен от верния;
+      - "incomplete": пресмятанията дотук са верни, но не е стигнато до отговор на зададения въпрос (напр. пита се "в колко часа", а е намерено само време в часове; пита се за три страни, а са намерени две; изразът не е опростен докрай);
+      - "missing": подточката изобщо не се вижда в решението;
+      - "unreadable": не можеш да разчетеш отговора със сигурност.
+   Бъди взискателен: едночлен, записан с излишни или грешни множители/степени, е "wrong". Не давай "correct" по съмнение.
+
+4. Не преценявай общо "прието/неприето" — това го решава програмата по статусите.
+{previous}
+Полето note е едно кратко изречение към детето на разбираем език: какво е сбъркано или какво липсва, БЕЗ да казваш верния отговор; празно при correct. {address} Предай резултата с инструмента report_check."""
+
+MATH_CHECK_TOOL = {
+    "name": "report_check",
+    "description": "Предава резултата от проверката на домашното, подточка по подточка.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "photo_quality": {
+                "type": "object",
+                "properties": {
+                    "readable": {"type": "boolean"},
+                    "problem": {"type": "string"},
+                },
+                "required": ["readable", "problem"],
+            },
+            "tasks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "напр. Уч.32/1г"},
+                        "condition": {"type": "string"},
+                        "correct_answer": {"type": "string"},
+                        "student_answer": {"type": "string"},
+                        "status": {"type": "string", "enum": ["correct", "wrong", "incomplete", "missing", "unreadable"]},
+                        "note": {"type": "string"},
+                    },
+                    "required": ["id", "condition", "correct_answer", "student_answer", "status", "note"],
+                },
+            },
+        },
+        "required": ["photo_quality", "tasks"],
+    },
+}
+
+PHOTO_RETAKE_TIP = (
+    "Снимай пак: на светло, отблизо и право отгоре, по една страница на снимка, "
+    "без сянка от ръката и така, че целият лист да е в кадъра."
+)
+
+
+def _decide_math_check(verdict: dict):
+    """Решението прието/неприето се взима ТУК, не от AI-то: приема се само ако има поне една
+    задача и всяка поискана подточка е със статус "correct". Връща (passed, feedback)."""
+    tasks = [t for t in (verdict.get("tasks") or []) if isinstance(t, dict)]
+    quality = verdict.get("photo_quality") or {}
+    by_status = {}
+    for t in tasks:
+        by_status.setdefault(t.get("status") or "unreadable", []).append(t)
+    correct = by_status.get("correct", [])
+    passed = bool(tasks) and len(correct) == len(tasks)
+
+    if passed:
+        return True, f"Всички {len(tasks)} задачи и подточки са решени вярно. Браво!"
+
+    lines = []
+    if not tasks:
+        problem = (quality.get("problem") or "").strip()
+        return False, ("Не успях да разчета домашното. " + (problem + " " if problem else "") + PHOTO_RETAKE_TIP)
+    lines.append(f"Верни: {len(correct)} от {len(tasks)}.")
+
+    def _fmt(t):
+        note = (t.get("note") or "").strip()
+        return f"{t.get('id', '?')}: {note}" if note else str(t.get("id", "?"))
+
+    for status, title in (("wrong", "❌ Грешни"), ("incomplete", "✏️ Недовършени"), ("missing", "➖ Липсват")):
+        items = by_status.get(status, [])
+        if items:
+            lines.append(title + ":")
+            lines.extend("• " + _fmt(t) for t in items)
+    unreadable = by_status.get("unreadable", [])
+    if unreadable:
+        lines.append("📷 Не се четат: " + ", ".join(str(t.get("id", "?")) for t in unreadable) + ".")
+        lines.append(PHOTO_RETAKE_TIP)
+    return False, "\n".join(lines)
+
+
+async def _check_math_homework(task_text: str, images: List[str], previous_issues: List[dict],
+                               child: dict = None) -> dict:
+    """Строга проверка по математика: AI-то препрочита и решава всяка подточка поотделно и
+    връща структуриран резултат; дали домашното е прието решава _decide_math_check."""
+    previous = ""
+    if previous_issues:
+        listed = "; ".join(
+            f"{t.get('id', '?')} ({t.get('status', '')})" for t in previous_issues[:30]
+        )
+        previous = (
+            "\nВАЖНО: това е повторен опит за същото домашно. При предишната проверка не бяха приети: "
+            f"{listed}. Провери тези подточки особено внимателно и ги приеми само ако на снимките "
+            "ясно се вижда поправено, вярно решение.\n"
+        )
+    child = child or {}
+    grade = str(child.get("grade") or "").strip()
+    is_girl = child.get("gender") == "female"
+    who = ("ученичка" if is_girl else "ученик") + (f" от {grade}. клас" if grade else "")
+    address = (
+        "Детето е момиче — обръщай се към него в женски род (\"намерила си\", \"пропуснала си\")."
+        if is_girl else
+        "Детето е момче — обръщай се към него в мъжки род (\"намерил си\", \"пропуснал си\")."
+    )
+    content = [{"type": "text", "text": MATH_CHECK_PROMPT.format(
+        task_text=task_text, previous=previous, who=who, address=address)}]
+    for img in images:
+        media_type, b64 = _prep_image_for_ai(img)
+        content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
+
+    async with httpx.AsyncClient(timeout=240.0) as client:
+        res = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": MATH_CHECK_MODEL,
+                "max_tokens": 12000,
+                "tools": [MATH_CHECK_TOOL],
+                # Този модел не приема принудителен избор на инструмент; промптът изисква
+                # извикването, а по-долу има резервно разчитане, ако отговори с текст.
+                "tool_choice": {"type": "auto"},
+                "messages": [{"role": "user", "content": content}],
+            },
+        )
+    if res.status_code != 200:
+        raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
+    data = res.json()
+    if data.get("stop_reason") == "max_tokens":
+        raise HTTPException(502, "Проверката излезе твърде дълга — пробвай с по-малко снимки наведнъж")
+    for block in data.get("content", []):
+        if block.get("type") == "tool_use" and isinstance(block.get("input"), dict):
+            return block["input"]
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+    parsed = _parse_verdict_json(text)
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("tasks"), list):
+        raise HTTPException(502, "Не успях да разчета отговора на AI-то")
+    return parsed
+
+
 def _parse_verdict_json(raw_text: str) -> dict:
     """Разчита JSON обект {"passed": ..., "feedback": ...} от отговора на Claude,
     издържа на code fences, типографски кавички, и увод/следсловие покрай JSON-а
@@ -596,18 +783,21 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
         if len(images) > 1 else ""
     )
 
+    details = None
     if is_math:
-        instruction = (
-            f"Ти си строг учител по математика. Задачата е със следния текст от Школо: "
-            f"\"{task_text}\".{scope_note} Провери дали показаното решение е ПРАВИЛНО И "
-            f"ПЪЛНО спрямо всичко поискано. Ако видяното е вярно, но покрива само част от "
-            f"поисканите задачи/подточки, отговори с passed=false и обясни ясно кое точно е "
-            f"вярно свършено и кое още липсва (напр. \"верните части — вярно, но има още N "
-            f"задачи\"), не просто \"грешно\". Отговори САМО с валиден JSON от вида "
-            f'{{"passed": true/false, "feedback": "кратко обяснение (1-2 изречения, на '
-            f'дете-разбираем език) — какво е вярно, какво липсва или е грешно"}}, без никакъв '
-            f'друг текст.'
+        # Какво не е било прието при последния неуспешен опит за същото домашно — за да не
+        # мине втори опит със същите грешки само защото AI-то е погледнало по-бегло.
+        last_failed = await db.homework_checks.find_one(
+            {"child_id": child_id, "homework_id": homework_id, "passed": False},
+            {"_id": 0, "details": 1}, sort=[("checked_at", -1)],
         )
+        previous_issues = [
+            t for t in (((last_failed or {}).get("details") or {}).get("tasks") or [])
+            if isinstance(t, dict) and t.get("status") != "correct"
+        ]
+        child = await db.children.find_one({"id": child_id}, {"_id": 0}) or {}
+        details = await _check_math_homework(task_text, images, previous_issues, child)
+        passed, feedback = _decide_math_check(details)
     else:
         instruction = (
             f"Ти си насърчаващ учител. Задачата е със следния текст от Школо: "
@@ -621,40 +811,40 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
             f'дете-разбираем език"}}, без никакъв друг текст.'
         )
 
-    content = [{"type": "text", "text": instruction}]
-    for img in images:
-        media_type, b64 = _parse_data_url(img)
-        content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
+        content = [{"type": "text", "text": instruction}]
+        for img in images:
+            media_type, b64 = _parse_data_url(img)
+            content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        res = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 1000,
-                "messages": [{"role": "user", "content": content}],
-            },
-        )
-    if res.status_code != 200:
-        raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": content}],
+                },
+            )
+        if res.status_code != 200:
+            raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
 
-    data = res.json()
-    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
-    verdict = _parse_verdict_json(text)
+        data = res.json()
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+        verdict = _parse_verdict_json(text)
 
-    passed = bool(verdict.get("passed"))
-    feedback = verdict.get("feedback", "")
+        passed = bool(verdict.get("passed"))
+        feedback = verdict.get("feedback", "")
 
     thumbs = [t for t in (_make_thumb(img) for img in images) if t]
     await db.homework_checks.insert_one(
         HomeworkCheckLog(
             child_id=child_id, homework_id=homework_id, subject=subject,
-            passed=passed, feedback=feedback, images=thumbs,
+            passed=passed, feedback=feedback, images=thumbs, details=details,
         ).dict()
     )
 
@@ -675,7 +865,7 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
 async def list_homework_checks(child_id: str, limit: int = 30):
     """Последните проверки на домашни (без снимките — те се взимат при отваряне на детайл)."""
     checks = await db.homework_checks.find(
-        {"child_id": child_id}, {"_id": 0, "images": 0}
+        {"child_id": child_id}, {"_id": 0, "images": 0, "details": 0}
     ).sort("checked_at", -1).to_list(max(1, min(limit, 100)))
     out = []
     for c in checks:

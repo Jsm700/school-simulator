@@ -146,6 +146,7 @@ class HomeworkCheckLog(BaseModel):
     passed: bool = False
     feedback: str = ""
     images: List[str] = Field(default_factory=list)  # умалени JPEG data URL-и на изпратените снимки (за родителя)
+    details: dict | None = None  # при математика: оценка подточка по подточка (условие, верен отговор, отговор на детето, статус)
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
 
