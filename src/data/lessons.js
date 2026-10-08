@@ -195,6 +195,7 @@ export const PUBLISHER_OPTIONS = [
   { value: "klett", label: "Клет" },
   { value: "prosveta", label: "Просвета" },
   { value: "super_minds", label: "Super Minds" },
+  { value: "live_beat", label: "Live Beat (Pearson)" },
   { value: "bulvest", label: "Булвест" },
   { value: "anubis", label: "Анубис" },
 ];
