@@ -171,6 +171,26 @@ export const SUBJECT_OPTIONS = [
   { value: "bulgarian", label: "Български език и литература" },
 ];
 
+// Кои предмети се учат в кой клас (по учебната програма). Падащото меню "Предмет"
+// показва само тях — иначе 4. клас вижда химия/физика, а 7. клас — предметите от 4. клас.
+// Клас, който липсва тук, вижда всички предмети.
+export const SUBJECTS_BY_CLASS = {
+  "1": ["bulgarian", "english"],
+  "2": ["bulgarian", "english"],
+  "3": ["human_nature", "human_society", "bulgarian", "english"],
+  "4": ["human_nature", "human_society", "bulgarian", "english"],
+  "5": ["human_nature", "history", "geography", "bulgarian", "english"],
+  "6": ["human_nature", "history", "geography", "bulgarian", "english"],
+  "7": ["history", "geography", "biology", "physics", "chemistry", "bulgarian", "english"],
+};
+
+export function getSubjectsForClass(classVal) {
+  const allowed = SUBJECTS_BY_CLASS[String(classVal)];
+  if (!allowed) return SUBJECT_OPTIONS;
+  const filtered = SUBJECT_OPTIONS.filter((s) => allowed.includes(s.value));
+  return filtered.length ? filtered : SUBJECT_OPTIONS;
+}
+
 export const PUBLISHER_OPTIONS = [
   { value: "klett", label: "Клет" },
   { value: "prosveta", label: "Просвета" },

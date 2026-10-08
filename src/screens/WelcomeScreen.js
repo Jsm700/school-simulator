@@ -22,6 +22,7 @@ import {
   CLASS_OPTIONS,
   SUBJECT_OPTIONS,
   PUBLISHER_OPTIONS,
+  getSubjectsForClass,
   getLessons,
 } from "../data/lessons";
 
@@ -184,8 +185,15 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
         const savedMap = savedMapRaw ? JSON.parse(savedMapRaw) : {};
         subjectPublisherMapRef.current = savedMap;
         if (savedClass) setClassVal(savedClass);
-        if (savedSubject) setSubject(savedSubject);
-        const subjectToUse = savedSubject || subject;
+        // Запомненият предмет може да не се учи в запомнения клас (напр. стар избор отпреди
+        // филтъра по клас) — тогава се взима първият предмет от програмата на класа.
+        const allowedSubjects = getSubjectsForClass(savedClass || classVal);
+        let subjectToUse = savedSubject || subject;
+        if (!allowedSubjects.some((s) => s.value === subjectToUse)) {
+          subjectToUse = allowedSubjects[0].value;
+          AsyncStorage.setItem(STORAGE_KEY_SUBJECT, subjectToUse).catch(() => {});
+        }
+        setSubject(subjectToUse);
         if (savedMap[subjectToUse]) setPublisher(savedMap[subjectToUse]);
       } catch (e) {
         console.error("AsyncStorage load error (class/subject/publisher):", e);
@@ -197,6 +205,11 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
     setClassVal(v);
     setSelectedLesson(null);
     AsyncStorage.setItem(STORAGE_KEY_CLASS, v).catch(() => {});
+    // Ако текущият предмет не се учи в новия клас, минава на първия от програмата му
+    const allowedSubjects = getSubjectsForClass(v);
+    if (!allowedSubjects.some((s) => s.value === subject)) {
+      updateSubject(allowedSubjects[0].value);
+    }
   };
 
   const updateSubject = (v) => {
@@ -416,7 +429,7 @@ returnKeyType="done"
           />
           <Picker
             label="Предмет"
-            options={SUBJECT_OPTIONS}
+            options={getSubjectsForClass(classVal)}
             value={subject}
             onChange={updateSubject}
           />
