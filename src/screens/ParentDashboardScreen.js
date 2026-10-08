@@ -25,9 +25,11 @@ const logKindIcon = (key) => {
 
 const subjectLabelOf = (value) => (ALL_SCHOOL_SUBJECTS.find((s) => s.value === value) || {}).label || value;
 
+const fmtEur = (v) => (Number(v) || 0).toFixed(2).replace(".", ",");
+
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes, scheduleRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes, scheduleRes, aiUsageRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
@@ -36,6 +38,7 @@ async function fetchChildData(childId) {
     fetch(`${BACKEND_URL}/children/${childId}/notebook`).then((r) => r.json()).catch(() => []),
     fetch(`${BACKEND_URL}/children/${childId}/homework/checks?limit=15`).then((r) => r.json()).catch(() => []),
     fetch(`${BACKEND_URL}/children/${childId}/schedule`).then((r) => r.json()).catch(() => ({})),
+    fetch(`${BACKEND_URL}/children/${childId}/ai-usage`).then((r) => r.json()).catch(() => null),
   ]);
   return {
     total: pointsRes.total || 0,
@@ -47,6 +50,7 @@ async function fetchChildData(childId) {
     homeworkStats: statsRes,
     notebook: Array.isArray(notebookRes) ? notebookRes : [],
     checks: Array.isArray(checksRes) ? checksRes : [],
+    aiUsage: (aiUsageRes && Array.isArray(aiUsageRes.by_kind)) ? aiUsageRes : null,
   };
 }
 
@@ -492,6 +496,25 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                   ))}
                 </View>
               )}
+            </View>
+          )}
+
+          {childData.aiUsage && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>💶 Разход за AI проверки · този месец</Text>
+              <Text style={styles.pointsTotal}>≈ {fmtEur(childData.aiUsage.cost_eur)} €</Text>
+              <Text style={styles.mutedText}>
+                {childData.aiUsage.count} заявки общо за семейството (всички деца)
+              </Text>
+              {childData.aiUsage.by_kind.map((k) => (
+                <View key={k.kind} style={styles.subjectRow}>
+                  <Text style={styles.taskTitle}>{k.label} · {k.count} бр.</Text>
+                  <Text style={styles.taskSubject}>{fmtEur(k.cost_eur)} €</Text>
+                </View>
+              ))}
+              <Text style={[styles.mutedText, { marginTop: spacing.sm }]}>
+                Приблизително, по цените на Anthropic. Не включва разговорите с Елена.
+              </Text>
             </View>
           )}
 

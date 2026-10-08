@@ -374,6 +374,39 @@ def _make_thumb(data_url: str, max_side: int = 1000, quality: int = 60) -> str:
         return ""
 
 
+# Цени на Anthropic API в долари за 1 млн. токена (вход, изход) — за приблизителния брояч на
+# разхода в родителския изглед. При смяна на модел или цена се обновяват тук.
+AI_PRICES_USD = {
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+USD_TO_EUR = float(os.environ.get("USD_TO_EUR", "0.87"))  # приблизителен курс, само за показване
+
+
+async def _log_ai_usage(child_id: str, kind: str, data: dict):
+    """Записва разхода за една AI заявка (токени и приблизителна цена). Броячът никога не
+    бива да чупи самата проверка, затова всяка грешка тук се преглъща."""
+    try:
+        usage = (data or {}).get("usage") or {}
+        model = (data or {}).get("model") or ""
+        tokens_in = int(usage.get("input_tokens") or 0)
+        tokens_out = int(usage.get("output_tokens") or 0)
+        price = next((v for k, v in AI_PRICES_USD.items() if model.startswith(k)), None)
+        cost = (tokens_in * price[0] + tokens_out * price[1]) / 1_000_000 if price else 0.0
+        await db.ai_usage.insert_one({
+            "id": "".join(random.choices(string.ascii_lowercase + string.digits, k=16)),
+            "child_id": child_id, "kind": kind, "model": model,
+            "input_tokens": tokens_in, "output_tokens": tokens_out,
+            "cost_usd": round(cost, 5), "priced": bool(price),
+            "month": datetime.utcnow().strftime("%Y-%m"),
+            "created_at": datetime.utcnow(),
+        })
+    except Exception as e:
+        print("ai_usage log error:", repr(e))
+
+
 def _prep_image_for_ai(data_url: str):
     """Подготвя снимка за AI проверката: изправя я по EXIF, свива я до разумен размер и
     изсветлява/вдига контраста (детските снимки често са тъмни). При проблем връща оригинала."""
@@ -500,7 +533,7 @@ def _decide_math_check(verdict: dict):
 
 
 async def _check_math_homework(task_text: str, images: List[str], previous_issues: List[dict],
-                               child: dict = None) -> dict:
+                               child: dict = None, child_id: str = "") -> dict:
     """Строга проверка по математика: AI-то препрочита и решава всяка подточка поотделно и
     връща структуриран резултат; дали домашното е прието решава _decide_math_check."""
     previous = ""
@@ -549,6 +582,7 @@ async def _check_math_homework(task_text: str, images: List[str], previous_issue
     if res.status_code != 200:
         raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
     data = res.json()
+    await _log_ai_usage(child_id, "homework_math", data)
     if data.get("stop_reason") == "max_tokens":
         raise HTTPException(502, "Проверката излезе твърде дълга — пробвай с по-малко снимки наведнъж")
     for block in data.get("content", []):
@@ -584,7 +618,7 @@ def _parse_verdict_json(raw_text: str) -> dict:
         raise HTTPException(502, "Не успях да разчета отговора на AI-то")
 
 
-async def _extract_homework_from_images(images: List[str]) -> List[dict]:
+async def _extract_homework_from_images(images: List[str], child_id: str = "") -> List[dict]:
     if not ANTHROPIC_API_KEY:
         raise HTTPException(500, "ANTHROPIC_API_KEY не е зададен на сървъра")
 
@@ -636,6 +670,7 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
         raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
 
     data = res.json()
+    await _log_ai_usage(child_id, "import", data)
     stop_reason = data.get("stop_reason", "")
     text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
     text = text.strip()
@@ -672,7 +707,7 @@ async def _extract_homework_from_images(images: List[str]) -> List[dict]:
 
 @app.post("/children/{child_id}/homework/import")
 async def import_homework(child_id: str, payload: HomeworkImportRequest):
-    extracted = await _extract_homework_from_images(payload.images)
+    extracted = await _extract_homework_from_images(payload.images, child_id)
 
     existing = await db.homework.find({"child_id": child_id}, {"_id": 0}).to_list(1000)
     existing_keys = {(e.get("subject", ""), e.get("task_text", "")) for e in existing}
@@ -796,7 +831,7 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
             if isinstance(t, dict) and t.get("status") != "correct"
         ]
         child = await db.children.find_one({"id": child_id}, {"_id": 0}) or {}
-        details = await _check_math_homework(task_text, images, previous_issues, child)
+        details = await _check_math_homework(task_text, images, previous_issues, child, child_id)
         passed, feedback = _decide_math_check(details)
     else:
         instruction = (
@@ -834,6 +869,7 @@ async def check_homework(child_id: str, homework_id: str, payload: HomeworkCheck
             raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
 
         data = res.json()
+        await _log_ai_usage(child_id, "homework_other", data)
         text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
         verdict = _parse_verdict_json(text)
 
@@ -898,6 +934,48 @@ def _try_parse_bg_date(s: str):
             except ValueError:
                 return None
     return None
+
+
+AI_USAGE_LABELS = {
+    "homework_math": "Проверка на домашно по математика",
+    "homework_other": "Проверка на домашно (други предмети)",
+    "notebook": "Тетрадка (термини)",
+    "import": "Импорт от Школо",
+}
+
+
+@app.get("/children/{child_id}/ai-usage")
+async def ai_usage(child_id: str, month: str = ""):
+    """Приблизителен разход за AI заявките на СЕМЕЙСТВОТО за месеца (по подразбиране текущия),
+    по вид заявка. Брои само заявките през този сървър — разговорите с Елена минават през
+    Cloudflare Worker-а и не влизат тук."""
+    month = month or datetime.utcnow().strftime("%Y-%m")
+    child = await db.children.find_one({"id": child_id}, {"_id": 0}) or {}
+    siblings = [child_id]
+    if child.get("family_id"):
+        siblings = [c["id"] for c in await db.children.find(
+            {"family_id": child["family_id"]}, {"_id": 0, "id": 1}).to_list(50)]
+    rows = await db.ai_usage.find(
+        {"child_id": {"$in": siblings}, "month": month}, {"_id": 0}).to_list(20000)
+    by_kind = {}
+    for r in rows:
+        k = by_kind.setdefault(r.get("kind", ""), {"count": 0, "cost_usd": 0.0})
+        k["count"] += 1
+        k["cost_usd"] += float(r.get("cost_usd") or 0)
+    total_usd = sum(k["cost_usd"] for k in by_kind.values())
+    first = min((r["created_at"] for r in rows if r.get("created_at")), default=None)
+    return {
+        "month": month,
+        "count": len(rows),
+        "cost_eur": round(total_usd * USD_TO_EUR, 2),
+        "since": first.isoformat() if first else None,
+        "by_kind": [
+            {"kind": kind, "label": AI_USAGE_LABELS.get(kind, kind), "count": v["count"],
+             "cost_eur": round(v["cost_usd"] * USD_TO_EUR, 2),
+             "avg_eur": round(v["cost_usd"] * USD_TO_EUR / v["count"], 3) if v["count"] else 0}
+            for kind, v in sorted(by_kind.items(), key=lambda kv: -kv[1]["cost_usd"])
+        ],
+    }
 
 
 @app.get("/children/{child_id}/homework/stats")
@@ -1015,6 +1093,7 @@ async def check_notebook(child_id: str, payload: NotebookCheckRequest):
         raise HTTPException(502, f"Claude API грешка: {res.status_code} {res.text[:300]}")
 
     data = res.json()
+    await _log_ai_usage(child_id, "notebook", data)
     text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
     verdict = _parse_verdict_json(text)
 
