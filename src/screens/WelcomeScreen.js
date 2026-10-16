@@ -132,6 +132,10 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
       if (ev.levelUp) {
         Alert.alert("🎉 Ново ниво!", `Ниво ${ev.levelUp.level} · ${ev.levelUp.name}`);
       }
+      if (ev.goalMilestone) {
+        const m = ev.goalMilestone;
+        Alert.alert(`🎯 ${m.percent}% от целта!`, `${m.title}: ${m.saved} от ${m.cost} 🪙 в касичката. Продължавай!`);
+      }
       ev.penalties.forEach((p) => {
         Alert.alert(
           `−${p.amount} точки`,
@@ -357,9 +361,26 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
           accessibilityRole="button"
           accessibilityLabel="Награди и ниво"
         >
-          <Text style={styles.pointsBadgeText}>
-            {wallet ? `Ниво ${wallet.level.level} · ⭐ ${wallet.wallet} · 🪙 ${wallet.tokens}` : "⭐ …"}
-          </Text>
+          {wallet ? (
+            <>
+              <Text style={styles.pointsBadgeText}>Ниво {wallet.level.level} · {wallet.level.name}</Text>
+              <Text style={styles.pointsBadgeSub}>⭐ {wallet.wallet} · 🪙 {wallet.tokens}</Text>
+              {wallet.goal ? (
+                <View style={styles.goalMini}>
+                  <Text style={styles.pointsBadgeSub} numberOfLines={1}>
+                    🎯 {wallet.goal.title} {wallet.goal.saved}/{wallet.goal.cost}
+                  </Text>
+                  <View style={styles.goalMiniTrack}>
+                    <View style={[styles.goalMiniFill, { width: `${Math.min(100, Math.round((wallet.goal.saved / wallet.goal.cost) * 100))}%` }]} />
+                  </View>
+                </View>
+              ) : wallet.goals_available > 0 ? (
+                <Text style={styles.pointsBadgeSub}>🎯 Избери голяма цел ›</Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.pointsBadgeText}>⭐ …</Text>
+          )}
           {wallet && wallet.at_risk.length > 0 && (
             <Text style={styles.riskBadgeText}>⚠ −{wallet.at_risk.reduce((s, r) => s + r.amount, 0)} в риск</Text>
           )}
@@ -593,7 +614,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     maxWidth: 190,
   },
-  pointsBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  pointsBadgeText: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  pointsBadgeSub: { color: "#fff", fontSize: 12, fontWeight: "600", marginTop: 2 },
+  goalMini: { alignSelf: "stretch", alignItems: "center", marginTop: 2 },
+  goalMiniTrack: {
+    alignSelf: "stretch", height: 5, borderRadius: 3, marginTop: 3,
+    backgroundColor: "rgba(255,255,255,0.3)", overflow: "hidden",
+  },
+  goalMiniFill: { height: 5, borderRadius: 3, backgroundColor: "#FFD54F" },
   riskBadgeText: {
     color: "#fff", fontSize: 12, fontWeight: "800", backgroundColor: "#C0392B",
     borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4, alignSelf: "center",

@@ -7,14 +7,17 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { getWallet, exchangeTokens, getRewards, requestReward } from "../services/rewards";
+import {
+  getWallet, exchangeTokens, getRewards, requestReward, chooseGoal, depositGoal, claimGoal,
+} from "../services/rewards";
 import { colors, spacing, radius } from "../theme";
 
 const STATUS_LABEL = { pending: "⏳ чака татко/мама", delivered: "✅ получено", cancelled: "↩︎ отказано, жетоните са върнати" };
+const GOAL_STATUS_LABEL = { ...STATUS_LABEL, cancelled: "↩︎ отложено, жетоните са в касичката" };
 
 export default function RewardsScreen({ navigation }) {
   const [wallet, setWallet] = useState(null);
-  const [shop, setShop] = useState({ rewards: [], requests: [] });
+  const [shop, setShop] = useState({ rewards: [], requests: [], goals: [], goal: null });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -76,6 +79,48 @@ export default function RewardsScreen({ navigation }) {
       ]
     );
   }, [load]);
+
+  const runGoal = useCallback(async (fn, okTitle, okMsg) => {
+    setBusy(true);
+    try {
+      await fn();
+      await load();
+      if (okTitle) Alert.alert(okTitle, okMsg);
+    } catch (e) {
+      Alert.alert("Не стана", e.message);
+    }
+    setBusy(false);
+  }, [load]);
+
+  const onChooseGoal = useCallback((g) => {
+    Alert.alert(
+      `🎯 ${g.title}`,
+      `Цел: ${g.cost} 🪙. Жетоните в касичката са заключени — не можеш да ги харчиш в магазина. Целта може да смени само родител.`,
+      [
+        { text: "Отказ", style: "cancel" },
+        { text: "Избирам", onPress: () => runGoal(() => chooseGoal(g.id), "Целта е избрана 🎯", "Пускай жетони в касичката, когато имаш.") },
+      ]
+    );
+  }, [runGoal]);
+
+  const onDeposit = useCallback((goal) => {
+    const left = goal.cost - goal.saved;
+    Alert.alert(
+      "Касичка",
+      `Пускаш 1 🪙 в касичката за „${goal.title}“? Няма връщане назад.`,
+      [
+        { text: "Не", style: "cancel" },
+        {
+          text: "Пускам",
+          onPress: () => runGoal(
+            () => depositGoal(1),
+            left <= 1 ? "🎉 Касичката е пълна!" : null,
+            left <= 1 ? `„${goal.title}“ отиде като заявка при татко/мама.` : null,
+          ),
+        },
+      ]
+    );
+  }, [runGoal]);
 
   if (loading) {
     return (
@@ -154,6 +199,59 @@ export default function RewardsScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
 
+          {/* Голяма цел */}
+          {shop.goal ? (
+            <View style={[styles.card, styles.goalCard]}>
+              <Text style={styles.goalLabel}>🎯 ГОЛЯМА ЦЕЛ</Text>
+              <Text style={styles.goalTitle}>{shop.goal.title}</Text>
+              <View style={styles.goalTrack}>
+                <View style={[styles.goalFill, { width: `${Math.min(100, Math.round((shop.goal.saved / shop.goal.cost) * 100))}%` }]} />
+                {[0.25, 0.5, 0.75].map((q) => (
+                  <View key={q} style={[styles.goalTick, { left: `${q * 100}%` }]} />
+                ))}
+              </View>
+              <Text style={styles.goalNums}>{shop.goal.saved} / {shop.goal.cost} 🪙 в касичката</Text>
+              {shop.goal.status === "claimed" ? (
+                <Text style={styles.muted}>🎉 Касичката е пълна — чака татко/мама.</Text>
+              ) : shop.goal.saved >= shop.goal.cost ? (
+                <TouchableOpacity style={styles.bigBtn} onPress={() => runGoal(claimGoal, "Готово", "Заявката е изпратена отново.")} disabled={busy}>
+                  <Text style={styles.bigBtnText}>Заяви наградата</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <Text style={styles.muted}>
+                    Остават {shop.goal.cost - shop.goal.saved} 🪙 ≈ {(shop.goal.cost - shop.goal.saved) * (wallet.token_price || 500)} ⭐
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.bigBtn, { marginTop: spacing.sm, marginBottom: 0 }, tokens < 1 && styles.btnDisabled]}
+                    onPress={() => onDeposit(shop.goal)}
+                    disabled={busy || tokens < 1}
+                  >
+                    <Text style={styles.bigBtnText}>{tokens >= 1 ? "Пусни 1 🪙 в касичката" : "Нямаш свободен жетон"}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          ) : (shop.goals || []).length > 0 ? (
+            <View style={[styles.card, styles.goalCard]}>
+              <Text style={styles.goalLabel}>🎯 ИЗБЕРИ ГОЛЯМА ЦЕЛ</Text>
+              <Text style={[styles.muted, { marginBottom: spacing.sm }]}>
+                Нещо голямо, за което спестяваш жетони. Изгодно е — излиза по-евтино от магазина.
+              </Text>
+              {shop.goals.map((g) => (
+                <View key={g.id} style={styles.shopRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.shopTitle}>{g.title}</Text>
+                    <Text style={styles.muted}>{g.cost} 🪙</Text>
+                  </View>
+                  <TouchableOpacity style={styles.smallBtn} onPress={() => onChooseGoal(g)} disabled={busy}>
+                    <Text style={styles.smallBtnText}>Избирам</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {/* Магазин */}
           <Text style={styles.sectionTitle}>🎁 Магазин</Text>
           {shop.rewards.map((r) => {
@@ -182,7 +280,7 @@ export default function RewardsScreen({ navigation }) {
               {shop.requests.slice(0, 10).map((q) => (
                 <View key={q.id} style={styles.reqRow}>
                   <Text style={styles.shopTitle}>{q.title}</Text>
-                  <Text style={styles.muted}>{STATUS_LABEL[q.status] || q.status}</Text>
+                  <Text style={styles.muted}>{(q.kind === "goal" ? GOAL_STATUS_LABEL : STATUS_LABEL)[q.status] || q.status}</Text>
                 </View>
               ))}
             </>
@@ -250,6 +348,13 @@ const styles = StyleSheet.create({
     minHeight: 44, justifyContent: "center", alignSelf: "flex-start", marginTop: 4,
   },
   smallBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  goalCard: { backgroundColor: "#FFF8E1", borderColor: "#F2C94C" },
+  goalLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1, color: "#8A6D00", marginBottom: 2 },
+  goalTitle: { fontSize: 22, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
+  goalTrack: { height: 18, borderRadius: 9, backgroundColor: "#F3E3A6", overflow: "hidden", marginBottom: 6 },
+  goalFill: { height: 18, borderRadius: 9, backgroundColor: "#F2B705" },
+  goalTick: { position: "absolute", top: 0, bottom: 0, width: 2, backgroundColor: "rgba(255,255,255,0.8)" },
+  goalNums: { fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: 4 },
   reqRow: {
     backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md,
     borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm,

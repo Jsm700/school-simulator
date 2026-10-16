@@ -270,6 +270,7 @@ async def reset_points(child_id: str):
     await db.token_log.delete_many({"child_id": child_id})
     await db.reward_requests.delete_many({"child_id": child_id})
     await db.penalties.delete_many({"child_id": child_id})
+    await db.child_goals.delete_many({"child_id": child_id})
     return {"ok": True}
 
 
@@ -437,6 +438,28 @@ async def _family_rewards(family_id: str) -> list:
     return (row or {}).get("rewards") or DEFAULT_REWARDS
 
 
+async def _family_goals(family_id: str) -> list:
+    row = await db.family_rewards.find_one({"family_id": family_id}, {"_id": 0, "goals": 1})
+    return (row or {}).get("goals") or []
+
+
+async def _child_goal(child_id: str):
+    """Текущата голяма цел на детето (активна или чакаща родителя), иначе None."""
+    return await db.child_goals.find_one(
+        {"child_id": child_id, "status": {"$in": ["active", "claimed"]}}, {"_id": 0})
+
+
+async def _claim_goal(child_id: str, goal: dict) -> dict:
+    """Касичката е пълна → заявка към родителя. Жетоните вече са в касичката, затова заявката не взема нови."""
+    rid = new_id()
+    req = {"id": rid, "child_id": child_id, "family_id": await _family_id(child_id), "reward_id": goal["goal_id"],
+           "title": f"🎯 {goal['title']}", "cost": goal["cost"], "status": "pending", "kind": "goal",
+           "goal_row_id": goal["id"], "created_at": datetime.utcnow(), "resolved_at": None}
+    await db.reward_requests.insert_one(dict(req))
+    await db.child_goals.update_one({"id": goal["id"]}, {"$set": {"status": "claimed", "request_id": rid}})
+    return req
+
+
 @app.get("/children/{child_id}/wallet")
 async def get_wallet(child_id: str):
     await _apply_overdue_penalties(child_id)
@@ -447,6 +470,8 @@ async def get_wallet(child_id: str):
         "wallet": wallet, "xp": xp, "level": _level_info(xp), "tokens": await _tokens(child_id),
         "token_price": TOKEN_PRICE, "can_exchange": wallet // TOKEN_PRICE,
         "at_risk": await _at_risk(child_id), "penalties": penalties,
+        "goal": await _child_goal(child_id),
+        "goals_available": len(await _family_goals(await _family_id(child_id))),
     }
 
 
@@ -471,7 +496,8 @@ async def exchange_tokens(child_id: str, payload: dict):
 async def get_rewards(child_id: str):
     fid = await _family_id(child_id)
     reqs = await db.reward_requests.find({"child_id": child_id}, {"_id": 0}).sort("created_at", -1).to_list(50)
-    return {"rewards": await _family_rewards(fid), "requests": reqs, "tokens": await _tokens(child_id)}
+    return {"rewards": await _family_rewards(fid), "requests": reqs, "tokens": await _tokens(child_id),
+            "goals": await _family_goals(fid), "goal": await _child_goal(child_id)}
 
 
 @app.put("/families/{family_id}/rewards")
@@ -489,7 +515,91 @@ async def set_family_rewards(family_id: str, payload: dict):
 
 @app.get("/families/{family_id}/rewards")
 async def get_family_rewards(family_id: str):
-    return {"rewards": await _family_rewards(family_id)}
+    return {"rewards": await _family_rewards(family_id), "goals": await _family_goals(family_id)}
+
+
+# ---------------- Голяма цел (касичка) ----------------
+# Родителят задава списък цели (общ за семейството). Детето избира една; жетоните, пуснати в
+# касичката, са заключени. При пълна касичка става заявка към родителя. Смяна на целта — само родителят,
+# спестеното остава.
+
+@app.put("/families/{family_id}/goals")
+async def set_family_goals(family_id: str, payload: dict):
+    clean = []
+    for g in (payload or {}).get("goals") or []:
+        title = str(g.get("title") or "").strip()
+        cost = int(g.get("cost") or 0)
+        if title and cost > 0:
+            clean.append({"id": str(g.get("id") or new_id()), "title": title[:60], "cost": cost})
+    await db.family_rewards.update_one(
+        {"family_id": family_id}, {"$set": {"family_id": family_id, "goals": clean}}, upsert=True)
+    return {"goals": clean}
+
+
+async def _find_family_goal(child_id: str, goal_id: str) -> dict:
+    goal = next((g for g in await _family_goals(await _family_id(child_id)) if g["id"] == goal_id), None)
+    if not goal:
+        raise HTTPException(404, "Няма такава цел")
+    return goal
+
+
+@app.post("/children/{child_id}/goal/choose")
+async def choose_goal(child_id: str, payload: dict):
+    """Детето избира цел — само ако още няма."""
+    if await _child_goal(child_id):
+        raise HTTPException(400, "Вече имаш цел. Само родител може да я смени.")
+    g = await _find_family_goal(child_id, (payload or {}).get("goal_id"))
+    row = {"id": new_id(), "child_id": child_id, "goal_id": g["id"], "title": g["title"], "cost": g["cost"],
+           "saved": 0, "status": "active", "created_at": datetime.utcnow()}
+    await db.child_goals.insert_one(dict(row))
+    return row
+
+
+@app.post("/children/{child_id}/goal/change")
+async def change_goal(child_id: str, payload: dict):
+    """Родителят сменя целта; спестените жетони остават в касичката."""
+    g = await _find_family_goal(child_id, (payload or {}).get("goal_id"))
+    cur = await _child_goal(child_id)
+    if cur and cur.get("status") == "claimed":
+        raise HTTPException(400, "Целта чака „Дадено“ или „Откажи“ — първо реши заявката.")
+    saved = int((cur or {}).get("saved") or 0)
+    if cur:
+        await db.child_goals.update_one({"id": cur["id"]}, {"$set": {"status": "replaced"}})
+    row = {"id": new_id(), "child_id": child_id, "goal_id": g["id"], "title": g["title"], "cost": g["cost"],
+           "saved": saved, "status": "active", "created_at": datetime.utcnow()}
+    await db.child_goals.insert_one(dict(row))
+    if saved >= g["cost"]:
+        await _claim_goal(child_id, row)
+    return await _child_goal(child_id)
+
+
+@app.post("/children/{child_id}/goal/deposit")
+async def deposit_goal(child_id: str, payload: dict):
+    count = int((payload or {}).get("count") or 1)
+    goal = await _child_goal(child_id)
+    if not goal or goal.get("status") != "active":
+        raise HTTPException(400, "Няма активна цел")
+    count = min(count, goal["cost"] - goal["saved"])
+    if count < 1:
+        raise HTTPException(400, "Касичката е пълна")
+    if await _tokens(child_id) < count:
+        raise HTTPException(400, "Нямаш достатъчно жетони")
+    await db.token_log.insert_one({"id": new_id(), "child_id": child_id, "delta": -count,
+                                   "reason": f"goal_{goal['id']}", "created_at": datetime.utcnow()})
+    await db.child_goals.update_one({"id": goal["id"]}, {"$inc": {"saved": count}})
+    goal["saved"] += count
+    if goal["saved"] >= goal["cost"]:
+        await _claim_goal(child_id, goal)
+    return {"goal": await _child_goal(child_id), "tokens": await _tokens(child_id)}
+
+
+@app.post("/children/{child_id}/goal/claim")
+async def claim_goal(child_id: str):
+    """Повторна заявка, ако родителят е отказал, а касичката е пълна."""
+    goal = await _child_goal(child_id)
+    if not goal or goal.get("status") != "active" or goal["saved"] < goal["cost"]:
+        raise HTTPException(400, "Касичката още не е пълна")
+    return await _claim_goal(child_id, goal)
 
 
 @app.post("/children/{child_id}/rewards/request")
@@ -515,12 +625,19 @@ async def resolve_reward_request(child_id: str, request_id: str, action: str):
     req = await db.reward_requests.find_one({"id": request_id, "child_id": child_id}, {"_id": 0})
     if not req or req.get("status") != "pending":
         raise HTTPException(404, "Заявката не е намерена или вече е обработена")
+    is_goal = req.get("kind") == "goal"
     if action == "deliver":
         status = "delivered"
+        if is_goal:
+            await db.child_goals.update_one({"id": req.get("goal_row_id")}, {"$set": {"status": "done"}})
     elif action == "cancel":
         status = "cancelled"
-        await db.token_log.insert_one({"id": new_id(), "child_id": child_id, "delta": req["cost"],
-                                       "reason": f"refund_{request_id}", "created_at": datetime.utcnow()})
+        if is_goal:
+            # жетоните остават в касичката — целта пак е активна и пълна
+            await db.child_goals.update_one({"id": req.get("goal_row_id")}, {"$set": {"status": "active"}})
+        else:
+            await db.token_log.insert_one({"id": new_id(), "child_id": child_id, "delta": req["cost"],
+                                           "reason": f"refund_{request_id}", "created_at": datetime.utcnow()})
     else:
         raise HTTPException(400, "Непознато действие")
     await db.reward_requests.update_one({"id": request_id},

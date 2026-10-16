@@ -10,7 +10,9 @@ import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { getLinkedDevice, listChildren, updateChild, enterChildView, BACKEND_URL } from "../services/deviceLink";
 import { ALL_SCHOOL_SUBJECTS, getSubjectsForDate } from "../services/schedule";
-import { getWallet, getRewards, resolveRewardRequest, forgivePenalty, saveFamilyRewards } from "../services/rewards";
+import {
+  getWallet, getRewards, resolveRewardRequest, forgivePenalty, saveFamilyRewards, saveFamilyGoals, changeGoal,
+} from "../services/rewards";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const fmtDM = (d) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
@@ -93,6 +95,8 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
   const [switchingChild, setSwitchingChild] = useState(false);
   const [checkDetail, setCheckDetail] = useState(null); // { loading, data }
   const [shopDraft, setShopDraft] = useState(null); // null = магазинът не се редактира; иначе [{id,title,cost}]
+  const [goalDraft, setGoalDraft] = useState(null); // същото за големите цели
+  const [goalPick, setGoalPick] = useState(false); // показва списъка за смяна на целта на детето
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,6 +121,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
 
   useEffect(() => {
     if (!selectedId) return;
+    setGoalPick(false);
     setLoadingChild(true);
     fetchChildData(selectedId).then(setChildData).finally(() => setLoadingChild(false));
   }, [selectedId]);
@@ -202,7 +207,9 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
   const onResolveRequest = useCallback((req, action) => {
     const msg = action === "deliver"
       ? `Отбелязвам „${req.title}“ като дадена?`
-      : `Отказваш „${req.title}“? Жетоните (${req.cost}) се връщат на детето.`;
+      : req.kind === "goal"
+        ? `Отлагаш „${req.title}“? Жетоните остават в касичката и детето може да заяви пак.`
+        : `Отказваш „${req.title}“? Жетоните (${req.cost}) се връщат на детето.`;
     Alert.alert("Награда", msg, [
       { text: "Не", style: "cancel" },
       {
@@ -249,6 +256,42 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
       Alert.alert("Грешка", e.message);
     }
   }, [link, shopDraft, refreshChild]);
+
+  const onSaveGoals = useCallback(async () => {
+    if (!link?.familyId || !goalDraft) return;
+    const clean = goalDraft
+      .map((g) => ({ ...g, title: (g.title || "").trim(), cost: parseInt(String(g.cost), 10) || 0 }))
+      .filter((g) => g.title && g.cost > 0);
+    try {
+      await saveFamilyGoals(link.familyId, clean);
+      setGoalDraft(null);
+      refreshChild();
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    }
+  }, [link, goalDraft, refreshChild]);
+
+  const onChangeGoal = useCallback((g) => {
+    const cur = childData?.rewards?.goal;
+    const msg = cur
+      ? `Сменяш „${cur.title}“ с „${g.title}“ (${g.cost} 🪙)? Спестените ${cur.saved} 🪙 остават в касичката.`
+      : `Задаваш цел „${g.title}“ (${g.cost} 🪙)?`;
+    Alert.alert("Голяма цел", msg, [
+      { text: "Не", style: "cancel" },
+      {
+        text: "Да",
+        onPress: async () => {
+          try {
+            await changeGoal(selectedId, g.id);
+            setGoalPick(false);
+          } catch (e) {
+            Alert.alert("Грешка", e.message);
+          }
+          refreshChild();
+        },
+      },
+    ]);
+  }, [childData, selectedId, refreshChild]);
 
   const selectedChildForEdit = children.find((c) => c.id === selectedId);
 
@@ -553,6 +596,94 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                     </TouchableOpacity>
                   </View>
                 ))}
+
+                <Text style={[styles.mutedText, { marginTop: spacing.md, marginBottom: spacing.xs }]}>🎯 Голяма цел на детето:</Text>
+                {childData.rewards?.goal ? (
+                  <Text style={styles.taskSubject}>
+                    {childData.rewards.goal.title} · {childData.rewards.goal.saved}/{childData.rewards.goal.cost} 🪙
+                    {childData.rewards.goal.status === "claimed" ? " · чака „Дадено“" : ""}
+                  </Text>
+                ) : (
+                  <Text style={styles.taskTitle}>Още не е избрана.</Text>
+                )}
+                {(childData.rewards?.goals || []).length > 0 && (
+                  goalPick ? (
+                    <>
+                      {childData.rewards.goals.map((g) => (
+                        <TouchableOpacity key={g.id} style={[styles.subjectRow, { marginTop: 6 }]} onPress={() => onChangeGoal(g)}>
+                          <Text style={[styles.taskTitle, { flex: 1 }]}>{g.title}</Text>
+                          <Text style={styles.taskSubject}>{g.cost} 🪙 ›</Text>
+                        </TouchableOpacity>
+                      ))}
+                      <TouchableOpacity style={[styles.smallBtn, styles.cancelBtn, { marginTop: 6 }]} onPress={() => setGoalPick(false)}>
+                        <Text style={styles.smallBtnText}>Отказ</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity style={[styles.smallBtn, { marginTop: 6 }]} onPress={() => setGoalPick(true)}>
+                      <Text style={styles.smallBtnText}>{childData.rewards?.goal ? "🔁 Смени целта" : "🎯 Задай цел"}</Text>
+                    </TouchableOpacity>
+                  )
+                )}
+
+                <Text style={[styles.mutedText, { marginTop: spacing.md, marginBottom: spacing.xs }]}>🎯 Големи цели (общи за семейството):</Text>
+                {goalDraft ? (
+                  <>
+                    {goalDraft.map((g, idx) => (
+                      <View key={g.id || `n${idx}`} style={{ flexDirection: "row", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                        <TextInput
+                          style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                          value={g.title}
+                          placeholder="Цел (напр. Колело)"
+                          onChangeText={(t) => setGoalDraft((d) => d.map((x, i) => (i === idx ? { ...x, title: t } : x)))}
+                        />
+                        <TextInput
+                          style={[styles.input, { width: 56, marginBottom: 0, textAlign: "center" }]}
+                          value={String(g.cost)}
+                          keyboardType="number-pad"
+                          accessibilityLabel="Цена в жетони"
+                          onChangeText={(t) => setGoalDraft((d) => d.map((x, i) => (i === idx ? { ...x, cost: t } : x)))}
+                        />
+                        <TouchableOpacity
+                          style={[styles.smallBtn, styles.cancelBtn]}
+                          onPress={() => setGoalDraft((d) => d.filter((_, i) => i !== idx))}
+                          accessibilityLabel="Премахни целта"
+                        >
+                          <Text style={styles.smallBtnText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+                      <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={() => setGoalDraft((d) => [...d, { id: "", title: "", cost: 25 }])}>
+                        <Text style={styles.smallBtnText}>+ Добави</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={onSaveGoals}>
+                        <Text style={styles.smallBtnText}>💾 Запази</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, styles.cancelBtn, { flex: 1 }]} onPress={() => setGoalDraft(null)}>
+                        <Text style={styles.smallBtnText}>Отказ</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {(childData.rewards?.goals || []).length === 0 && (
+                      <Text style={styles.taskTitle}>Няма зададени цели.</Text>
+                    )}
+                    {(childData.rewards?.goals || []).map((g) => (
+                      <View key={g.id} style={styles.subjectRow}>
+                        <Text style={styles.taskTitle}>{g.title}</Text>
+                        <Text style={styles.taskSubject}>{g.cost} 🪙</Text>
+                      </View>
+                    ))}
+                    <TouchableOpacity
+                      style={[styles.smallBtn, { marginTop: spacing.sm }]}
+                      onPress={() => setGoalDraft((childData.rewards?.goals || []).map((g) => ({ ...g })))}
+                    >
+                      <Text style={styles.smallBtnText}>✏️ Промени целите</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
 
                 <Text style={[styles.mutedText, { marginTop: spacing.md, marginBottom: spacing.xs }]}>Магазин (общ за семейството):</Text>
                 {shopDraft ? (

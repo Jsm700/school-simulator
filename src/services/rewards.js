@@ -60,11 +60,40 @@ export async function saveFamilyRewards(familyId, rewards) {
   });
 }
 
+// Голяма цел (касичка)
+export async function chooseGoal(goalId) {
+  const id = await getCurrentChildId();
+  return post(`/children/${id}/goal/choose`, { goal_id: goalId });
+}
+
+export async function depositGoal(count = 1) {
+  const id = await getCurrentChildId();
+  return post(`/children/${id}/goal/deposit`, { count });
+}
+
+export async function claimGoal() {
+  const id = await getCurrentChildId();
+  return post(`/children/${id}/goal/claim`);
+}
+
+// родителят сменя целта на детето (спестеното остава)
+export async function changeGoal(childId, goalId) {
+  return post(`/children/${childId}/goal/change`, { goal_id: goalId });
+}
+
+export async function saveFamilyGoals(familyId, goals) {
+  return call(`/families/${familyId}/goals`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ goals }),
+  });
+}
+
 // Какво детето вече е видяло (ниво, глоби) — за да покажем съобщение само веднъж.
 const SEEN_KEY = "rewards_seen_v1";
 
 export async function getNewEvents(wallet) {
-  if (!wallet) return { levelUp: null, penalties: [] };
+  if (!wallet) return { levelUp: null, penalties: [], goalMilestone: null };
   let seen = {};
   try {
     seen = JSON.parse((await AsyncStorage.getItem(SEEN_KEY)) || "{}");
@@ -75,12 +104,21 @@ export async function getNewEvents(wallet) {
   const levelUp = !first && wallet.level.level > seen.level ? wallet.level : null;
   const seenPen = new Set(seen.penalties || []);
   const penalties = first ? [] : (wallet.penalties || []).filter((p) => !p.forgiven && !seenPen.has(p.id));
+  // Празнуване на 25/50/75 % от касичката (пълната касичка има собствено съобщение при пускането)
+  const g = wallet.goal;
+  const quarter = g && g.cost > 0 ? Math.floor((g.saved / g.cost) * 4) : 0;
+  const goalKey = g ? g.id : null;
+  const goalMilestone = !first && g && goalKey === seen.goalId && quarter > (seen.goalQuarter || 0) && quarter >= 1 && quarter <= 3
+    ? { title: g.title, percent: quarter * 25, saved: g.saved, cost: g.cost }
+    : null;
   const next = {
     level: wallet.level.level,
     penalties: (wallet.penalties || []).map((p) => p.id),
+    goalId: goalKey,
+    goalQuarter: quarter,
   };
   try {
     await AsyncStorage.setItem(SEEN_KEY, JSON.stringify(next));
   } catch (e) {}
-  return { levelUp, penalties };
+  return { levelUp, penalties, goalMilestone };
 }
