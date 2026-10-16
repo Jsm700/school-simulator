@@ -10,6 +10,7 @@ import { syncLinkedChildProfile } from "../services/deviceLink";
 import { getSnapshotForDate, saveSnapshotForDate } from "../services/dailyTasks";
 import { getSceneProgress } from "../services/sceneProgress";
 import { colors, spacing, radius } from "../theme";
+import { getWallet } from "../services/rewards";
 
 const WORKER_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 
@@ -60,6 +61,11 @@ export default function DnesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(() => addDays(new Date(), 1)); // по подразбиране: утре, както преди
   const [tasks, setTasks] = useState([]); // [{ subject, lesson }]
+  const [atRisk, setAtRisk] = useState([]); // домашни със срок днес/утре без изпратена снимка
+
+  useEffect(() => {
+    getWallet().then((w) => setAtRisk(w?.at_risk || []));
+  }, []);
   const [studentInfo, setStudentInfo] = useState({ name: "Тони", gender: "male", classVal: "4" });
 
   const load = useCallback(async () => {
@@ -181,6 +187,21 @@ export default function DnesScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+          {atRisk.length > 0 && (
+            <TouchableOpacity
+              style={styles.riskBox}
+              onPress={() => navigation.navigate("Homework")}
+              accessibilityRole="button"
+            >
+              <Text style={styles.riskTitle}>Първо: домашни</Text>
+              {atRisk.map((r) => (
+                <Text key={r.homework_id} style={styles.riskLine}>
+                  ⏳ {r.subject || "Домашно"} — срок {r.when}. Ако не го изпратиш: −{r.amount} точки
+                </Text>
+              ))}
+              <Text style={styles.riskLink}>Към домашните →</Text>
+            </TouchableOpacity>
+          )}
           {tasks.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>
@@ -248,6 +269,13 @@ export default function DnesScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  riskBox: {
+    backgroundColor: "#FFF1E0", borderColor: "#E8A23A", borderWidth: 1.5, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.md,
+  },
+  riskTitle: { fontSize: 15, fontWeight: "800", color: "#9A4A00", marginBottom: 4 },
+  riskLine: { fontSize: 14, color: "#5c2d00", marginBottom: 2 },
+  riskLink: { fontSize: 13, fontWeight: "700", color: colors.primary, marginTop: 4 },
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: { padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border },

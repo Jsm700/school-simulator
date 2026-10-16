@@ -22,7 +22,7 @@ from models import (
     Family, Child, ChildCreate, ChildUpdate, CompletedLesson, PointsLogEntry,
     AwardPointsRequest, StreakData, SceneProgress, SceneProgressUpdate,
     WeeklySchedule, DailyTaskSnapshot, HomeworkEntry, HomeworkImportRequest, HomeworkCheckRequest,
-    HomeworkCheckLog, NotebookEntry, NotebookCheckRequest,
+    HomeworkCheckLog, NotebookEntry, NotebookCheckRequest, new_id,
 )
 
 MONGO_URL = os.environ["MONGO_URL"]
@@ -249,9 +249,10 @@ async def _award_fixed_points(child_id: str, lesson_key: str, subject: str, less
 
 @app.get("/children/{child_id}/points")
 async def get_points(child_id: str):
+    await _apply_overdue_penalties(child_id)
     log = await db.points_log.find({"child_id": child_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    total = sum(e.get("points", 0) for e in log)
-    return {"total": total, "log": log}
+    wallet, xp = await _wallet_and_xp(child_id)
+    return {"total": wallet, "wallet": wallet, "xp": xp, "level": _level_info(xp), "log": log}
 
 
 @app.post("/children/{child_id}/points/award")
@@ -266,6 +267,277 @@ async def award_points(child_id: str, payload: AwardPointsRequest):
 async def reset_points(child_id: str):
     await db.points_log.delete_many({"child_id": child_id})
     await db.streaks.delete_many({"child_id": child_id})
+    await db.token_log.delete_many({"child_id": child_id})
+    await db.reward_requests.delete_many({"child_id": child_id})
+    await db.penalties.delete_many({"child_id": child_id})
+    return {"ok": True}
+
+
+# ---------------- Нива, портфейл, жетони, награди, глоби (решено 16.10.2026) ----------------
+# Опит (xp) = всички спечелени точки; никога не намалява → нивото никога не пада.
+# Портфейл = сборът на целия дневник; обменът за жетони и глобите са отрицателни записи в него.
+# Детето само обменя точки за жетони; наградите от магазина ги потвърждава родителят.
+
+TOKEN_PRICE = 500
+HOMEWORK_PENALTY = 20
+PENALTY_WEEKLY_CAP = 60
+PENALTY_START_DATE = "2026-10-17"  # глоби само за домашни със срок от тази дата нататък
+LEVELS = [
+    (0, "Новак"), (300, "Ученик"), (700, "Знаещ"), (1200, "Отличник"), (1800, "Експерт"),
+    (2500, "Майстор"), (3300, "Мъдрец"), (4200, "Професор"), (5200, "Гений"), (6300, "Легенда"),
+]
+DEFAULT_REWARDS = [
+    {"id": "pocket5", "title": "5 € джобни", "cost": 1},
+    {"id": "dinner", "title": "Избираш какво ще вечеряме", "cost": 1},
+    {"id": "cinema", "title": "Кино или излизане", "cost": 4},
+    {"id": "gift30", "title": "Подарък по избор до 30 €", "cost": 8},
+]
+_NON_XP_PREFIXES = ("exchange_", "penalty_", "forgive_")
+
+
+def _sofia_now() -> datetime:
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Sofia")).replace(tzinfo=None)
+    except Exception:
+        return datetime.utcnow() + timedelta(hours=3)
+
+
+def _to_sofia(dt) -> datetime:
+    """created_at/checked_at се пазят в UTC без зона."""
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", ""))
+        except ValueError:
+            return None
+    if not isinstance(dt, datetime):
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.replace(tzinfo=__import__("datetime").timezone.utc).astimezone(ZoneInfo("Europe/Sofia")).replace(tzinfo=None)
+    except Exception:
+        return dt + timedelta(hours=3)
+
+
+def _level_info(xp: int) -> dict:
+    idx = 0
+    for i, (threshold, _) in enumerate(LEVELS):
+        if xp >= threshold:
+            idx = i
+    start, name = LEVELS[idx]
+    nxt = LEVELS[idx + 1][0] if idx + 1 < len(LEVELS) else None
+    return {
+        "level": idx + 1, "name": name, "from": start, "to": nxt,
+        "next_name": LEVELS[idx + 1][1] if nxt is not None else None,
+        "progress": 1.0 if nxt is None else round((xp - start) / (nxt - start), 3),
+        "remaining": 0 if nxt is None else nxt - xp,
+    }
+
+
+async def _wallet_and_xp(child_id: str):
+    log = await db.points_log.find({"child_id": child_id}, {"_id": 0, "points": 1, "lesson_key": 1}).to_list(20000)
+    wallet = sum(int(e.get("points") or 0) for e in log)
+    xp = sum(int(e.get("points") or 0) for e in log
+             if int(e.get("points") or 0) > 0 and not (e.get("lesson_key") or "").startswith(_NON_XP_PREFIXES))
+    return max(0, wallet), xp
+
+
+async def _tokens(child_id: str) -> int:
+    rows = await db.token_log.find({"child_id": child_id}, {"_id": 0, "delta": 1}).to_list(20000)
+    return max(0, sum(int(r.get("delta") or 0) for r in rows))
+
+
+def _ledger_entry(child_id: str, key: str, title: str, points: int) -> dict:
+    return PointsLogEntry(
+        child_id=child_id, date=today_str(), lesson_key=key, subject="", lesson_title=title,
+        topics_total=1, topics_covered=1, complete=True, points=points,
+    ).dict()
+
+
+async def _homework_attempted_by(child_id: str, homework_id: str, deadline: datetime) -> bool:
+    checks = await db.homework_checks.find(
+        {"child_id": child_id, "homework_id": homework_id}, {"_id": 0, "checked_at": 1}).to_list(100)
+    for c in checks:
+        t = _to_sofia(c.get("checked_at"))
+        if t and t < deadline:
+            return True
+    return False
+
+
+async def _penalty_candidates(child_id: str):
+    """Домашни, които (а) са внесени поне ден преди срока, (б) срокът е от PENALTY_START_DATE нататък,
+    (в) не са приети и (г) няма нито един опит за проверка до края на деня на срока."""
+    out = []
+    rows = await db.homework.find(
+        {"child_id": child_id, "archived": {"$ne": True}, "done": {"$ne": True}}, {"_id": 0}).to_list(2000)
+    for h in rows:
+        due = _try_parse_bg_date(h.get("due_date", ""))
+        if not due or due.strftime("%Y-%m-%d") < PENALTY_START_DATE:
+            continue
+        created = _to_sofia(h.get("created_at"))
+        if not created or created.date() >= due.date():
+            continue  # внесено в деня на срока или след него — детето не е могло да знае
+        out.append((h, due))
+    return out
+
+
+async def _apply_overdue_penalties(child_id: str):
+    now = _sofia_now()
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    for h, due in await _penalty_candidates(child_id):
+        deadline = due + timedelta(days=1)  # краят на деня на срока
+        if now < deadline:
+            continue
+        if await db.penalties.find_one({"child_id": child_id, "homework_id": h["id"]}):
+            continue
+        if await _homework_attempted_by(child_id, h["id"], deadline):
+            continue
+        this_week = await db.penalties.find(
+            {"child_id": child_id, "forgiven": {"$ne": True}}, {"_id": 0, "amount": 1, "created_at": 1}).to_list(500)
+        used = sum(int(p.get("amount") or 0) for p in this_week
+                   if (_to_sofia(p.get("created_at")) or now) >= week_start)
+        wallet, _ = await _wallet_and_xp(child_id)
+        amount = max(0, min(HOMEWORK_PENALTY, PENALTY_WEEKLY_CAP - used, wallet))
+        pid = new_id()
+        if amount > 0:
+            await db.points_log.insert_one(_ledger_entry(
+                child_id, f"penalty_{pid}", f"Глоба: просрочено домашно ({h.get('subject') or 'без предмет'}, срок {h.get('due_date')})", -amount))
+        await db.penalties.insert_one({
+            "id": pid, "child_id": child_id, "homework_id": h["id"], "subject": h.get("subject", ""),
+            "task_text": h.get("task_text", ""), "due_date": h.get("due_date", ""), "amount": amount,
+            "forgiven": False, "created_at": datetime.utcnow(),
+        })
+
+
+async def _at_risk(child_id: str):
+    now = _sofia_now()
+    out = []
+    for h, due in await _penalty_candidates(child_id):
+        deadline = due + timedelta(days=1)
+        if now >= deadline or (deadline - now).days > 1:
+            continue  # вече минало или срокът е след повече от ден
+        if await _homework_attempted_by(child_id, h["id"], deadline):
+            continue
+        days_left = (due.date() - now.date()).days
+        out.append({
+            "homework_id": h["id"], "subject": h.get("subject", ""), "task_text": h.get("task_text", ""),
+            "due_date": h.get("due_date", ""), "amount": HOMEWORK_PENALTY,
+            "when": "днес" if days_left <= 0 else "утре",
+        })
+    return out
+
+
+async def _family_id(child_id: str) -> str:
+    child = await db.children.find_one({"id": child_id}, {"_id": 0, "family_id": 1}) or {}
+    return child.get("family_id", "")
+
+
+async def _family_rewards(family_id: str) -> list:
+    row = await db.family_rewards.find_one({"family_id": family_id}, {"_id": 0})
+    return (row or {}).get("rewards") or DEFAULT_REWARDS
+
+
+@app.get("/children/{child_id}/wallet")
+async def get_wallet(child_id: str):
+    await _apply_overdue_penalties(child_id)
+    wallet, xp = await _wallet_and_xp(child_id)
+    penalties = await db.penalties.find(
+        {"child_id": child_id, "amount": {"$gt": 0}}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    return {
+        "wallet": wallet, "xp": xp, "level": _level_info(xp), "tokens": await _tokens(child_id),
+        "token_price": TOKEN_PRICE, "can_exchange": wallet // TOKEN_PRICE,
+        "at_risk": await _at_risk(child_id), "penalties": penalties,
+    }
+
+
+@app.post("/children/{child_id}/tokens/exchange")
+async def exchange_tokens(child_id: str, payload: dict):
+    count = int((payload or {}).get("count") or 1)
+    if count < 1:
+        raise HTTPException(400, "Невалиден брой жетони")
+    wallet, _ = await _wallet_and_xp(child_id)
+    cost = count * TOKEN_PRICE
+    if wallet < cost:
+        raise HTTPException(400, f"Нужни са {cost} точки, имаш {wallet}")
+    eid = new_id()
+    await db.points_log.insert_one(_ledger_entry(
+        child_id, f"exchange_{eid}", f"Обмен: {count} {'жетон' if count == 1 else 'жетона'}", -cost))
+    await db.token_log.insert_one({"id": eid, "child_id": child_id, "delta": count, "reason": "exchange",
+                                   "created_at": datetime.utcnow()})
+    return await get_wallet(child_id)
+
+
+@app.get("/children/{child_id}/rewards")
+async def get_rewards(child_id: str):
+    fid = await _family_id(child_id)
+    reqs = await db.reward_requests.find({"child_id": child_id}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return {"rewards": await _family_rewards(fid), "requests": reqs, "tokens": await _tokens(child_id)}
+
+
+@app.put("/families/{family_id}/rewards")
+async def set_family_rewards(family_id: str, payload: dict):
+    clean = []
+    for r in (payload or {}).get("rewards") or []:
+        title = str(r.get("title") or "").strip()
+        cost = int(r.get("cost") or 0)
+        if title and cost > 0:
+            clean.append({"id": str(r.get("id") or new_id()), "title": title[:80], "cost": cost})
+    await db.family_rewards.update_one(
+        {"family_id": family_id}, {"$set": {"family_id": family_id, "rewards": clean}}, upsert=True)
+    return {"rewards": clean}
+
+
+@app.get("/families/{family_id}/rewards")
+async def get_family_rewards(family_id: str):
+    return {"rewards": await _family_rewards(family_id)}
+
+
+@app.post("/children/{child_id}/rewards/request")
+async def request_reward(child_id: str, payload: dict):
+    fid = await _family_id(child_id)
+    reward = next((r for r in await _family_rewards(fid) if r["id"] == (payload or {}).get("reward_id")), None)
+    if not reward:
+        raise HTTPException(404, "Няма такава награда")
+    if await _tokens(child_id) < reward["cost"]:
+        raise HTTPException(400, "Нямаш достатъчно жетони")
+    rid = new_id()
+    await db.token_log.insert_one({"id": new_id(), "child_id": child_id, "delta": -reward["cost"],
+                                   "reason": f"request_{rid}", "created_at": datetime.utcnow()})
+    req = {"id": rid, "child_id": child_id, "family_id": fid, "reward_id": reward["id"],
+           "title": reward["title"], "cost": reward["cost"], "status": "pending",
+           "created_at": datetime.utcnow(), "resolved_at": None}
+    await db.reward_requests.insert_one(dict(req))
+    return req
+
+
+@app.post("/children/{child_id}/rewards/requests/{request_id}/{action}")
+async def resolve_reward_request(child_id: str, request_id: str, action: str):
+    req = await db.reward_requests.find_one({"id": request_id, "child_id": child_id}, {"_id": 0})
+    if not req or req.get("status") != "pending":
+        raise HTTPException(404, "Заявката не е намерена или вече е обработена")
+    if action == "deliver":
+        status = "delivered"
+    elif action == "cancel":
+        status = "cancelled"
+        await db.token_log.insert_one({"id": new_id(), "child_id": child_id, "delta": req["cost"],
+                                       "reason": f"refund_{request_id}", "created_at": datetime.utcnow()})
+    else:
+        raise HTTPException(400, "Непознато действие")
+    await db.reward_requests.update_one({"id": request_id},
+                                        {"$set": {"status": status, "resolved_at": datetime.utcnow()}})
+    return {"ok": True, "status": status}
+
+
+@app.post("/children/{child_id}/penalties/{penalty_id}/forgive")
+async def forgive_penalty(child_id: str, penalty_id: str):
+    p = await db.penalties.find_one({"id": penalty_id, "child_id": child_id}, {"_id": 0})
+    if not p or p.get("forgiven"):
+        raise HTTPException(404, "Глобата не е намерена или вече е опростена")
+    if int(p.get("amount") or 0) > 0:
+        await db.points_log.insert_one(_ledger_entry(
+            child_id, f"forgive_{penalty_id}", f"Опростена глоба ({p.get('subject') or 'домашно'}, срок {p.get('due_date')})",
+            int(p["amount"])))
+    await db.penalties.update_one({"id": penalty_id}, {"$set": {"forgiven": True}})
     return {"ok": True}
 
 
@@ -1031,8 +1303,8 @@ async def homework_stats(child_id: str):
 
 # ---------------- Тетрадка (термини/дефиниции, снимани по време на "Оживи урока") ----------------
 
-NOTEBOOK_TERM_POINTS = 20
-NOTEBOOK_BONUS_POINTS = 10
+NOTEBOOK_TERM_POINTS = 6  # поевтинено на 16.10.2026 (беше 20) — преписването даваше ~60% от точките
+NOTEBOOK_BONUS_POINTS = 3  # (беше 10)
 
 
 @app.get("/children/{child_id}/notebook")

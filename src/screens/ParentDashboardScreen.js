@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
 import { getLinkedDevice, listChildren, updateChild, enterChildView, BACKEND_URL } from "../services/deviceLink";
 import { ALL_SCHOOL_SUBJECTS, getSubjectsForDate } from "../services/schedule";
+import { getWallet, getRewards, resolveRewardRequest, forgivePenalty, saveFamilyRewards } from "../services/rewards";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const fmtDM = (d) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
@@ -29,7 +30,7 @@ const fmtEur = (v) => (Number(v) || 0).toFixed(2).replace(".", ",");
 
 async function fetchChildData(childId) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes, scheduleRes, aiUsageRes] = await Promise.all([
+  const [pointsRes, progressRes, tasksRes, homeworkRes, statsRes, notebookRes, checksRes, scheduleRes, aiUsageRes, walletRes, rewardsRes] = await Promise.all([
     fetch(`${BACKEND_URL}/children/${childId}/points`).then((r) => r.json()).catch(() => ({ total: 0, log: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/progress`).then((r) => r.json()).catch(() => ({ completed_kv_keys: [] })),
     fetch(`${BACKEND_URL}/children/${childId}/daily-tasks?date=${today}`).then((r) => r.json()).catch(() => ({ assignments: {} })),
@@ -39,6 +40,8 @@ async function fetchChildData(childId) {
     fetch(`${BACKEND_URL}/children/${childId}/homework/checks?limit=15`).then((r) => r.json()).catch(() => []),
     fetch(`${BACKEND_URL}/children/${childId}/schedule`).then((r) => r.json()).catch(() => ({})),
     fetch(`${BACKEND_URL}/children/${childId}/ai-usage`).then((r) => r.json()).catch(() => null),
+    getWallet(childId),
+    getRewards(childId).catch(() => null),
   ]);
   return {
     total: pointsRes.total || 0,
@@ -51,6 +54,8 @@ async function fetchChildData(childId) {
     notebook: Array.isArray(notebookRes) ? notebookRes : [],
     checks: Array.isArray(checksRes) ? checksRes : [],
     aiUsage: (aiUsageRes && Array.isArray(aiUsageRes.by_kind)) ? aiUsageRes : null,
+    wallet: walletRes,
+    rewards: rewardsRes,
   };
 }
 
@@ -87,6 +92,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
   const [savingEdit, setSavingEdit] = useState(false);
   const [switchingChild, setSwitchingChild] = useState(false);
   const [checkDetail, setCheckDetail] = useState(null); // { loading, data }
+  const [shopDraft, setShopDraft] = useState(null); // null = магазинът не се редактира; иначе [{id,title,cost}]
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -188,6 +194,61 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
       },
     ]);
   }, [selectedId]);
+
+  const refreshChild = useCallback(() => {
+    if (selectedId) fetchChildData(selectedId).then(setChildData).catch(() => {});
+  }, [selectedId]);
+
+  const onResolveRequest = useCallback((req, action) => {
+    const msg = action === "deliver"
+      ? `Отбелязвам „${req.title}“ като дадена?`
+      : `Отказваш „${req.title}“? Жетоните (${req.cost}) се връщат на детето.`;
+    Alert.alert("Награда", msg, [
+      { text: "Не", style: "cancel" },
+      {
+        text: "Да",
+        onPress: async () => {
+          try {
+            await resolveRewardRequest(selectedId, req.id, action);
+          } catch (e) {
+            Alert.alert("Грешка", e.message);
+          }
+          refreshChild();
+        },
+      },
+    ]);
+  }, [selectedId, refreshChild]);
+
+  const onForgive = useCallback((p) => {
+    Alert.alert("Опрости глобата?", `Връщат се ${p.amount} точки (${p.subject || "домашно"}, срок ${p.due_date}).`, [
+      { text: "Не", style: "cancel" },
+      {
+        text: "Опрости",
+        onPress: async () => {
+          try {
+            await forgivePenalty(selectedId, p.id);
+          } catch (e) {
+            Alert.alert("Грешка", e.message);
+          }
+          refreshChild();
+        },
+      },
+    ]);
+  }, [selectedId, refreshChild]);
+
+  const onSaveShop = useCallback(async () => {
+    if (!link?.familyId || !shopDraft) return;
+    const clean = shopDraft
+      .map((r) => ({ ...r, title: (r.title || "").trim(), cost: parseInt(String(r.cost), 10) || 0 }))
+      .filter((r) => r.title && r.cost > 0);
+    try {
+      await saveFamilyRewards(link.familyId, clean);
+      setShopDraft(null);
+      refreshChild();
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    }
+  }, [link, shopDraft, refreshChild]);
 
   const selectedChildForEdit = children.find((c) => c.id === selectedId);
 
@@ -456,8 +517,102 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>⭐ Общо точки</Text>
-            <Text style={styles.pointsTotal}>{childData.total}</Text>
+            <Text style={styles.cardTitle}>🏆 Ниво, точки и награди</Text>
+            {childData.wallet ? (
+              <>
+                <Text style={styles.taskSubject}>
+                  Ниво {childData.wallet.level.level} · {childData.wallet.level.name}
+                  {childData.wallet.level.to != null ? ` (до следващото: ${childData.wallet.level.remaining})` : ""}
+                </Text>
+                <Text style={styles.pointsTotal}>⭐ {childData.wallet.wallet}  ·  🪙 {childData.wallet.tokens}</Text>
+                <Text style={styles.mutedText}>Опит общо: {childData.wallet.xp} · 1 жетон = {childData.wallet.token_price} точки</Text>
+
+                {childData.wallet.at_risk.length > 0 && (
+                  <Text style={[styles.mutedText, { color: "#A3271B", marginTop: spacing.sm }]}>
+                    ⚠ В риск: {childData.wallet.at_risk.map((r) => `${r.subject || "домашно"} (срок ${r.when})`).join(", ")}
+                  </Text>
+                )}
+
+                {(childData.rewards?.requests || []).filter((q) => q.status === "pending").map((q) => (
+                  <View key={q.id} style={[styles.subjectRow, { marginTop: spacing.sm, alignItems: "center" }]}>
+                    <Text style={[styles.taskSubject, { flex: 1 }]}>🎁 Заявка: {q.title} ({q.cost} 🪙)</Text>
+                    <TouchableOpacity style={styles.smallBtn} onPress={() => onResolveRequest(q, "deliver")}>
+                      <Text style={styles.smallBtnText}>Дадено</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.smallBtn, styles.cancelBtn, { marginLeft: 6 }]} onPress={() => onResolveRequest(q, "cancel")}>
+                      <Text style={styles.smallBtnText}>Откажи</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {childData.wallet.penalties.filter((p) => !p.forgiven).slice(0, 5).map((p) => (
+                  <View key={p.id} style={[styles.subjectRow, { marginTop: spacing.sm, alignItems: "center" }]}>
+                    <Text style={[styles.taskTitle, { flex: 1 }]}>−{p.amount} · {p.subject || "домашно"}, срок {p.due_date}</Text>
+                    <TouchableOpacity style={[styles.smallBtn, styles.cancelBtn]} onPress={() => onForgive(p)}>
+                      <Text style={styles.smallBtnText}>Опрости</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                <Text style={[styles.mutedText, { marginTop: spacing.md, marginBottom: spacing.xs }]}>Магазин (общ за семейството):</Text>
+                {shopDraft ? (
+                  <>
+                    {shopDraft.map((r, idx) => (
+                      <View key={r.id || idx} style={{ flexDirection: "row", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                        <TextInput
+                          style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                          value={r.title}
+                          placeholder="Награда"
+                          onChangeText={(t) => setShopDraft((d) => d.map((x, i) => (i === idx ? { ...x, title: t } : x)))}
+                        />
+                        <TextInput
+                          style={[styles.input, { width: 56, marginBottom: 0, textAlign: "center" }]}
+                          value={String(r.cost)}
+                          keyboardType="number-pad"
+                          accessibilityLabel="Цена в жетони"
+                          onChangeText={(t) => setShopDraft((d) => d.map((x, i) => (i === idx ? { ...x, cost: t } : x)))}
+                        />
+                        <TouchableOpacity
+                          style={[styles.smallBtn, styles.cancelBtn]}
+                          onPress={() => setShopDraft((d) => d.filter((_, i) => i !== idx))}
+                          accessibilityLabel="Премахни наградата"
+                        >
+                          <Text style={styles.smallBtnText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+                      <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={() => setShopDraft((d) => [...d, { id: "", title: "", cost: 1 }])}>
+                        <Text style={styles.smallBtnText}>+ Добави</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={onSaveShop}>
+                        <Text style={styles.smallBtnText}>💾 Запази</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, styles.cancelBtn, { flex: 1 }]} onPress={() => setShopDraft(null)}>
+                        <Text style={styles.smallBtnText}>Отказ</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {(childData.rewards?.rewards || []).map((r) => (
+                      <View key={r.id} style={styles.subjectRow}>
+                        <Text style={styles.taskTitle}>{r.title}</Text>
+                        <Text style={styles.taskSubject}>{r.cost} 🪙</Text>
+                      </View>
+                    ))}
+                    <TouchableOpacity
+                      style={[styles.smallBtn, { marginTop: spacing.sm }]}
+                      onPress={() => setShopDraft((childData.rewards?.rewards || []).map((r) => ({ ...r })))}
+                    >
+                      <Text style={styles.smallBtnText}>✏️ Промени наградите</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
+            ) : (
+              <Text style={styles.pointsTotal}>{childData.total}</Text>
+            )}
           </View>
 
           {childData.homeworkStats && (

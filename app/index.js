@@ -34,6 +34,8 @@ export default function Index() {
         router.push({ pathname: "/dnes" });
       } else if (screen === "Homework") {
         router.push({ pathname: "/homework" });
+      } else if (screen === "Rewards") {
+        router.push({ pathname: "/rewards" });
       } else if (screen === "ScheduleSettings") {
         router.push({ pathname: "/schedule-settings" });
       }

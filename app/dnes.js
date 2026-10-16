@@ -28,6 +28,8 @@ export default function Dnes() {
             studentGrade: params.studentGrade,
           },
         });
+      } else if (screen === "Homework") {
+        router.push({ pathname: "/homework" });
       }
     },
   };

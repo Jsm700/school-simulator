@@ -15,6 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius } from "../theme";
 import { BACKEND_URL, getCurrentChildId } from "../services/deviceLink";
 import MultiShotCamera from "../components/MultiShotCamera";
+import { getWallet } from "../services/rewards";
 
 export default function HomeworkScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -24,6 +25,7 @@ export default function HomeworkScreen({ navigation }) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photos, setPhotos] = useState([]); // [{uri, base64}] — може да са няколко страници
   const [checking, setChecking] = useState(false);
+  const [risk, setRisk] = useState({}); // homework_id -> {amount, when} — домашни, които ще донесат глоба
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,6 +36,10 @@ export default function HomeworkScreen({ navigation }) {
       const res = await fetch(`${BACKEND_URL}/children/${id}/homework?done=false`);
       const data = await res.json();
       setHomework(Array.isArray(data) ? data : []);
+      const w = await getWallet(id);
+      const map = {};
+      (w?.at_risk || []).forEach((r) => { map[r.homework_id] = r; });
+      setRisk(map);
     } catch (e) {
       console.error("HomeworkScreen load error:", e);
     } finally {
@@ -198,12 +204,17 @@ export default function HomeworkScreen({ navigation }) {
           <Text style={styles.mutedText}>Няма чакащи домашни точно сега 🎉</Text>
         ) : (
           homework.map((hw) => (
-            <TouchableOpacity key={hw.id} style={styles.card} onPress={() => setSelected(hw)}>
+            <TouchableOpacity key={hw.id} style={[styles.card, risk[hw.id] && styles.cardRisk]} onPress={() => setSelected(hw)}>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={styles.taskSubject}>{hw.subject || "(предмет?)"}</Text>
                 {hw.due_date ? <Text style={styles.mutedText}>срок: {hw.due_date}</Text> : null}
               </View>
               <Text style={styles.taskText}>{hw.task_text}</Text>
+              {risk[hw.id] ? (
+                <Text style={styles.riskText}>
+                  ⏳ Срок: {risk[hw.id].when} · ако не го изпратиш: −{risk[hw.id].amount} точки
+                </Text>
+              ) : null}
               <Text style={styles.tapHint}>Тапни, за да снимаш →</Text>
             </TouchableOpacity>
           ))
@@ -226,6 +237,8 @@ const styles = StyleSheet.create({
   taskSubject: { fontSize: 15, fontWeight: "700", color: colors.text },
   taskText: { fontSize: 14, color: colors.text, marginTop: spacing.xs },
   tapHint: { fontSize: 12, color: colors.primary, marginTop: spacing.sm },
+  cardRisk: { backgroundColor: "#FFF1E0", borderColor: "#E8A23A", borderWidth: 1.5 },
+  riskText: { fontSize: 13, fontWeight: "700", color: "#9A4A00", marginTop: spacing.sm },
   mutedText: { fontSize: 14, color: colors.muted },
   previewRow: { marginBottom: spacing.md },
   previewThumbWrap: { marginRight: spacing.sm },

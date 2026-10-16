@@ -25,6 +25,12 @@ export default function Layout() {
           }}
         />
         <Stack.Screen
+          name="rewards"
+          options={{
+            animation: "slide_from_right",
+          }}
+        />
+        <Stack.Screen
           name="schedule-settings"
           options={{
             animation: "slide_from_right",

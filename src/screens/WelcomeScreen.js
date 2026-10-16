@@ -14,7 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
-import { getTotalPoints, resetPoints } from "../services/points";
+import { resetPoints } from "../services/points";
+import { getWallet, getNewEvents } from "../services/rewards";
 import { getLinkedDevice, unlinkDevice, isInChildViewFromParent, exitChildView, syncLinkedChildProfile } from "../services/deviceLink";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -115,7 +116,7 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
   const [publisher, setPublisher] = useState("klett");
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [kvIndex, setKvIndex] = useState(null);
-  const [totalPoints, setTotalPoints] = useState(0);
+  const [wallet, setWallet] = useState(null);
   const [familyCode, setFamilyCode] = useState(null);
 
   React.useEffect(() => {
@@ -123,7 +124,21 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
   }, []);
 
   const refreshPoints = React.useCallback(() => {
-    getTotalPoints().then(setTotalPoints);
+    getWallet().then(async (w) => {
+      if (!w) return;
+      setWallet(w);
+      // Съобщения за ново ниво и за нова глоба — само веднъж
+      const ev = await getNewEvents(w);
+      if (ev.levelUp) {
+        Alert.alert("🎉 Ново ниво!", `Ниво ${ev.levelUp.level} · ${ev.levelUp.name}`);
+      }
+      ev.penalties.forEach((p) => {
+        Alert.alert(
+          `−${p.amount} точки`,
+          `Домашно по ${p.subject || "предмет"} със срок ${p.due_date} не беше изпратено навреме.`
+        );
+      });
+    });
   }, []);
 
   React.useEffect(() => {
@@ -336,9 +351,19 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
           <Text style={styles.headerTitle}>Учко</Text>
           <Text style={styles.headerSub}>Изберете урок за изпитване</Text>
         </View>
-        <View style={styles.pointsBadge}>
-          <Text style={styles.pointsBadgeText}>⭐ {totalPoints}</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.pointsBadge}
+          onPress={() => navigation.navigate("Rewards")}
+          accessibilityRole="button"
+          accessibilityLabel="Награди и ниво"
+        >
+          <Text style={styles.pointsBadgeText}>
+            {wallet ? `Ниво ${wallet.level.level} · ⭐ ${wallet.wallet} · 🪙 ${wallet.tokens}` : "⭐ …"}
+          </Text>
+          {wallet && wallet.at_risk.length > 0 && (
+            <Text style={styles.riskBadgeText}>⚠ −{wallet.at_risk.reduce((s, r) => s + r.amount, 0)} в риск</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -560,11 +585,19 @@ const styles = StyleSheet.create({
   familyCodeValue: { fontSize: 16, fontWeight: "700", color: colors.primaryDark, letterSpacing: 2 },
   pointsBadge: {
     backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: radius.full,
+    borderRadius: radius.md,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    maxWidth: 190,
   },
   pointsBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  riskBadgeText: {
+    color: "#fff", fontSize: 12, fontWeight: "800", backgroundColor: "#C0392B",
+    borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4, alignSelf: "center",
+  },
   scheduleLinkText: { fontSize: 12, color: colors.primary },
   header: {
     backgroundColor: colors.primary,
