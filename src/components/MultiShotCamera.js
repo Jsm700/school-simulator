@@ -7,13 +7,13 @@
 import React, { useState, useRef, useCallback } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   Image,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
+import { Text } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { colors, spacing, radius } from "../theme";

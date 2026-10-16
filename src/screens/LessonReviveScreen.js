@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -10,9 +9,10 @@ import {
   Image,
   Alert,
 } from "react-native";
+import { Text } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { colors, spacing, radius } from "../theme";
+import { colors, spacing, radius, subjectStyle } from "../theme";
 import { getSceneProgress, saveSceneProgress } from "../services/sceneProgress";
 import { BACKEND_URL, getCurrentChildId, logActivityMinutes } from "../services/deviceLink";
 
@@ -128,6 +128,11 @@ export default function LessonReviveScreen({ route, navigation }) {
     navigation.replace("Quiz", { lesson, studentName, studentGender, studentGrade });
   }, [navigation, lesson, studentName, studentGender, studentGrade]);
 
+  // След сцените: ако урокът има „Опит на живо“ — първо него, после изпита
+  const handleFinishScenes = useCallback(() => {
+    navigation.replace(lesson.hasInteractive ? "Interactive" : "Quiz", { lesson, studentName, studentGender, studentGrade });
+  }, [navigation, lesson, studentName, studentGender, studentGrade]);
+
   const pickNotebookPhoto = useCallback(async (fromCamera) => {
     try {
       const perm = fromCamera
@@ -223,19 +228,38 @@ export default function LessonReviveScreen({ route, navigation }) {
   const scenesRemaining = scenes.length - sceneIndex; // включва текущата
   const almostDone = !isLastScene && scenesRemaining <= 2;
   const scene = scenes[sceneIndex];
+  const subj = subjectStyle(lesson.subject);
+  // В KV първият отговор е верният; на екрана редът е разбъркан
+  const correctLabel = scene.choices && scene.choices[0] ? scene.choices[0].label : null;
+  const noChoices = !scene.choices || scene.choices.length === 0;
+  const isCorrect = noChoices || (!!selectedChoice && selectedChoice.label === correctLabel);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={handlePrevScene}>
-          <Text style={styles.backBtn}>‹ {sceneIndex > 0 ? "Предишна сцена" : "Назад"}</Text>
-        </TouchableOpacity>
-        <Text style={styles.progress}>{sceneIndex + 1} / {scenes.length}</Text>
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={handlePrevScene} style={styles.backHit} accessibilityRole="button">
+            <Text style={styles.backBtn}>‹ {sceneIndex > 0 ? "Назад" : "Изход"}</Text>
+          </TouchableOpacity>
+          <Text style={styles.progress}>Сцена {sceneIndex + 1} от {scenes.length}</Text>
+        </View>
+        <View style={styles.segments}>
+          {scenes.map((_, i) => (
+            <View
+              key={i}
+              style={[styles.segment, i < sceneIndex && styles.segmentDone, i === sceneIndex && styles.segmentNow]}
+            />
+          ))}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <Text style={[styles.eyebrow, { color: subj.color }]}>{subj.emoji} ОЖИВИ УРОКА</Text>
         <Text style={styles.title}>{lesson.title}</Text>
-        <Text style={styles.sceneText}>{scene.text}</Text>
+
+        <View style={styles.storyCard}>
+          <Text style={styles.sceneText}>{scene.text}</Text>
+        </View>
 
         {(() => {
           const pendingTerms = (scene.vocabTerms || []).filter((t) => !doneTerms.has(t));
@@ -243,12 +267,11 @@ export default function LessonReviveScreen({ route, navigation }) {
           const term = pendingTerms[0];
           return (
             <View style={styles.notebookBox}>
-              <Text style={styles.notebookPrompt}>
-                📝 Запиши в тетрадката: <Text style={{ fontWeight: "700" }}>{term}</Text>
-                {vocabulary[term] ? ` — ${vocabulary[term]}` : ""}
-              </Text>
+              <Text style={styles.notebookLabel}>📝 ЗАПИШИ В ТЕТРАДКАТА</Text>
+              <Text style={styles.notebookTerm}>{term}</Text>
+              {vocabulary[term] ? <Text style={styles.notebookDef}>{vocabulary[term]}</Text> : null}
               <Text style={styles.notebookBonus}>
-                ✨ Бонус, ако искаш: обясни и със свои думи — допълнителни точки
+                ✨ Бонус: обясни и със свои думи — допълнителни точки
               </Text>
 
               {notebookPhoto ? (
@@ -275,7 +298,7 @@ export default function LessonReviveScreen({ route, navigation }) {
                     style={[styles.notebookBtn, styles.notebookBtnSecondary]}
                     onPress={() => pickNotebookPhoto(false)}
                   >
-                    <Text style={styles.notebookBtnText}>🖼️ Галерия</Text>
+                    <Text style={[styles.notebookBtnText, { color: colors.success }]}>🖼️ Галерия</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -283,15 +306,27 @@ export default function LessonReviveScreen({ route, navigation }) {
           );
         })()}
 
+        {!noChoices && (
+          <Text style={styles.chooseLabel}>{isCorrect ? "Точно така!" : selectedChoice ? "Опитай пак:" : "Какво мислиш?"}</Text>
+        )}
         {shuffledChoices.map((choice, idx) => {
           const isSelected = selectedChoice && selectedChoice.label === choice.label;
+          const right = isSelected && isCorrect;
+          const wrong = isSelected && !isCorrect;
           return (
             <TouchableOpacity
               key={idx}
-              style={[styles.choiceBtn, isSelected && styles.choiceBtnSelected]}
+              style={[styles.choiceBtn, right && styles.choiceRight, wrong && styles.choiceWrong]}
               onPress={() => handleChoice(choice)}
+              disabled={isCorrect}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.choiceBtnText, isSelected && styles.choiceBtnTextSelected]}>
+              <View style={[styles.choiceLetter, right && { backgroundColor: colors.success }, wrong && { backgroundColor: colors.danger }]}>
+                <Text style={[styles.choiceLetterText, (right || wrong) && { color: "#fff" }]}>
+                  {right ? "✓" : wrong ? "✗" : String.fromCharCode(1040 + idx)}
+                </Text>
+              </View>
+              <Text style={[styles.choiceBtnText, (right || wrong) && { fontWeight: "700" }]}>
                 {choice.label}
               </Text>
             </TouchableOpacity>
@@ -299,27 +334,31 @@ export default function LessonReviveScreen({ route, navigation }) {
         })}
 
         {selectedChoice && (
-          <View style={styles.feedbackBox}>
-            <Text style={styles.feedbackText}>{selectedChoice.feedback}</Text>
+          <View style={[styles.feedbackBox, isCorrect ? styles.feedbackRight : styles.feedbackWrong]}>
+            <Text style={[styles.feedbackText, { color: isCorrect ? "#145E3D" : "#8A2018" }]}>
+              {selectedChoice.feedback}
+            </Text>
           </View>
         )}
 
-        {selectedChoice && (
+        {isCorrect && (
           <TouchableOpacity
-            style={[styles.nextBtn, almostDone && styles.nextBtnAlmostDone]}
-            onPress={isLastScene ? handleGoToExam : handleNext}
+            style={[styles.nextBtn, (almostDone || isLastScene) && styles.nextBtnAlmostDone]}
+            onPress={isLastScene ? handleFinishScenes : handleNext}
+            activeOpacity={0.85}
           >
             <Text style={styles.nextBtnText}>
               {isLastScene
-                ? "Готов съм за изпит"
+                ? lesson.hasInteractive ? "Към опита на живо →" : "Готов съм за изпит →"
                 : almostDone
                 ? scenesRemaining - 1 === 1
                   ? "Последна сцена след тази! 🔥"
                   : `Само ${scenesRemaining - 1} сцени до края! 🔥`
-                : "Напред"}
+                : "Напред →"}
             </Text>
           </TouchableOpacity>
         )}
+        <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -328,74 +367,75 @@ export default function LessonReviveScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
+    flex: 1, backgroundColor: colors.background,
+    alignItems: "center", justifyContent: "center", padding: spacing.xl,
   },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md,
+    backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  backBtn: { fontSize: 15, color: colors.primary },
-  progress: { fontSize: 13, color: colors.muted },
-  content: { padding: spacing.xl },
-  title: { fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: spacing.lg },
-  sceneText: { fontSize: 16, color: colors.text, lineHeight: 24, marginBottom: spacing.xl },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  backHit: { minHeight: 40, justifyContent: "center", paddingRight: spacing.md },
+  backBtn: { fontSize: 16, color: colors.primary, fontWeight: "800" },
+  progress: { fontSize: 13, color: colors.muted, fontWeight: "700" },
+  segments: { flexDirection: "row", gap: 4, marginTop: 6 },
+  segment: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.pillTodo },
+  segmentDone: { backgroundColor: colors.success },
+  segmentNow: { backgroundColor: colors.accent },
+  content: { padding: spacing.lg },
+  eyebrow: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2 },
+  title: { fontSize: 20, fontFamily: "display", fontWeight: "700", color: colors.text, marginTop: 4, marginBottom: spacing.lg },
+  storyCard: {
+    backgroundColor: colors.card, borderRadius: radius.xl, padding: spacing.xl,
+    borderWidth: 1, borderColor: colors.border, marginBottom: spacing.lg,
+    borderLeftWidth: 5, borderLeftColor: colors.energy,
+  },
+  sceneText: { fontSize: 18, color: colors.text, lineHeight: 28 },
+  chooseLabel: { fontSize: 13, fontWeight: "900", color: colors.muted, letterSpacing: 0.8, marginBottom: spacing.sm, textTransform: "uppercase" },
   choiceBtn: {
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border,
+    borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, minHeight: 56,
   },
-  choiceBtnText: { fontSize: 15, color: colors.text },
-  choiceBtnSelected: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  choiceBtnTextSelected: { color: colors.primaryDark, fontWeight: "600" },
-  feedbackBox: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.sm,
+  choiceRight: { borderColor: colors.success, backgroundColor: colors.successLight },
+  choiceWrong: { borderColor: colors.danger, backgroundColor: colors.dangerLight },
+  choiceLetter: {
+    width: 32, height: 32, borderRadius: 10, backgroundColor: colors.background,
+    alignItems: "center", justifyContent: "center",
   },
-  feedbackText: { fontSize: 15, color: colors.primaryDark, lineHeight: 22 },
+  choiceLetterText: { fontSize: 15, fontWeight: "900", color: colors.muted },
+  choiceBtnText: { flex: 1, fontSize: 16, color: colors.text, lineHeight: 22 },
+  feedbackBox: { borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.xs },
+  feedbackRight: { backgroundColor: colors.successLight },
+  feedbackWrong: { backgroundColor: colors.dangerLight },
+  feedbackText: { fontSize: 16, lineHeight: 24 },
   nextBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: "center",
-    marginTop: spacing.lg,
+    backgroundColor: colors.primary, borderRadius: radius.lg, minHeight: 54,
+    alignItems: "center", justifyContent: "center", marginTop: spacing.lg,
   },
-  nextBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  nextBtnAlmostDone: { backgroundColor: colors.warning },
+  nextBtnText: { color: "#fff", fontSize: 17, fontWeight: "900" },
+  nextBtnAlmostDone: { backgroundColor: colors.accent },
   notebookBox: {
-    backgroundColor: colors.successLight, borderRadius: radius.md,
-    padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.success,
+    backgroundColor: colors.successLight, borderRadius: radius.xl,
+    padding: spacing.lg, marginBottom: spacing.lg,
   },
-  notebookPrompt: { fontSize: 14, color: colors.text, lineHeight: 20 },
-  notebookBonus: { fontSize: 12, color: colors.muted, marginTop: spacing.xs, marginBottom: spacing.sm },
+  notebookLabel: { fontSize: 12, fontWeight: "900", color: colors.success, letterSpacing: 1 },
+  notebookTerm: { fontSize: 18, fontFamily: "display", fontWeight: "700", color: colors.text, marginTop: 6 },
+  notebookDef: { fontSize: 15, color: colors.text, lineHeight: 22, marginTop: 4 },
+  notebookBonus: { fontSize: 13, color: colors.muted, marginTop: spacing.sm, marginBottom: spacing.md },
   notebookRow: { flexDirection: "row", gap: spacing.sm },
   notebookBtn: {
-    flex: 1, backgroundColor: colors.success, borderRadius: radius.sm,
-    padding: spacing.sm, alignItems: "center",
+    flex: 1, backgroundColor: colors.success, borderRadius: radius.md,
+    minHeight: 46, alignItems: "center", justifyContent: "center",
   },
-  notebookBtnSecondary: { backgroundColor: colors.primary },
-  notebookBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
-  notebookPreview: { width: "100%", height: 160, borderRadius: radius.sm, marginBottom: spacing.sm, resizeMode: "cover" },
-  notebookSubmitBtn: { backgroundColor: colors.warning, borderRadius: radius.sm, padding: spacing.sm, alignItems: "center" },
-  emptyText: { fontSize: 15, color: colors.muted, marginBottom: spacing.lg, textAlign: "center" },
+  notebookBtnSecondary: { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.success },
+  notebookBtnText: { color: "#fff", fontSize: 15, fontWeight: "800" },
+  notebookPreview: { width: "100%", height: 180, borderRadius: radius.md, marginBottom: spacing.sm, resizeMode: "cover" },
+  notebookSubmitBtn: { backgroundColor: colors.accent, borderRadius: radius.md, minHeight: 46, alignItems: "center", justifyContent: "center" },
+  emptyText: { fontSize: 16, color: colors.muted, marginBottom: spacing.lg, textAlign: "center" },
   examBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.primary, borderRadius: radius.md,
+    minHeight: 50, justifyContent: "center", paddingHorizontal: spacing.xl,
   },
-  examBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  examBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 });

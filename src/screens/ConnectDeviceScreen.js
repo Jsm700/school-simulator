@@ -5,9 +5,14 @@
 
 import React, { useState, useCallback } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, ActivityIndicator, Alert,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
+import { Text, TextInput } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, radius } from "../theme";
 import {
@@ -274,7 +279,7 @@ export default function ConnectDeviceScreen({ onLinked }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xl, flexGrow: 1, justifyContent: "center" },
-  title: { fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: spacing.sm, textAlign: "center" },
+  title: { fontSize: 20, fontFamily: "display", fontWeight: "700", color: colors.text, marginBottom: spacing.sm, textAlign: "center" },
   subtitle: { fontSize: 14, color: colors.muted, marginBottom: spacing.xl, textAlign: "center" },
   bigBtn: {
     backgroundColor: colors.primary, borderRadius: radius.md,

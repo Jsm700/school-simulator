@@ -4,7 +4,19 @@
 // семейството и вижда точки, дневник, и статуса на днешните задачи за всяко.
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking, Alert, AppState, Modal, Image } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  Linking,
+  Alert,
+  AppState,
+  Modal,
+  Image,
+} from "react-native";
+import { Text, TextInput } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, spacing, radius } from "../theme";
@@ -894,7 +906,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: spacing.xl },
   emptyText: { fontSize: 15, color: colors.muted, textAlign: "center" },
   header: { padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
+  headerTitle: { fontSize: 18, fontFamily: "display", fontWeight: "700", color: colors.text },
   importLink: { fontSize: 13, color: colors.primary, marginTop: spacing.xs },
   scheduleLink: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   scheduleLinkText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
@@ -949,7 +961,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 0.5,
     borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md,
   },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: spacing.sm },
+  cardTitle: { fontSize: 15, fontFamily: "display", fontWeight: "700", color: colors.text, marginBottom: spacing.sm },
   pointsTotal: { fontSize: 32, fontWeight: "800", color: colors.primaryDark },
   mutedText: { fontSize: 13, color: colors.muted },
   taskRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },

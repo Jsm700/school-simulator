@@ -2,9 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
-  Text,
   Alert,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -14,6 +12,7 @@ import {
   PermissionsAndroid,
   Modal,
 } from "react-native";
+import { Text, TextInput } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
@@ -21,7 +20,7 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-spe
 import { getTeacherResponse, getAudio } from "../services/ai";
 import { consumeGreetingPrefetch } from "../services/prefetch";
 import { useLocalSearchParams } from "expo-router";
-import { colors, spacing, radius } from "../theme";
+import { colors, spacing, radius, subjectStyle } from "../theme";
 import { markLessonCompleted, isLessonCompleted } from "../services/progress";
 import { awardLessonPoints } from "../services/points";
 import { logActivityMinutes } from "../services/deviceLink";
@@ -41,9 +40,10 @@ function ChatBubble({ role, text }) {
     return (
       <View style={styles.bubbleRowAI}>
         <View style={styles.avatarCircle}>
-          <Text style={{ fontSize: 16 }}>👩‍🏫</Text>
+          <Text style={{ fontSize: 18 }}>👩‍🏫</Text>
         </View>
         <View style={styles.bubbleAI}>
+          <Text style={styles.bubbleAIName}>Елена</Text>
           <Text style={styles.bubbleAIText}>{text}</Text>
         </View>
       </View>
@@ -406,6 +406,7 @@ export default function QuizScreen({ navigation }) {
     }
   }, [isRecording, currentAnswerLang]);
 
+  const subj = subjectStyle(lesson.subject);
   const topicEntries = lesson.topics.map(key => ({
     key,
     label: lesson.topicLabels[key],
@@ -413,7 +414,7 @@ export default function QuizScreen({ navigation }) {
   }));
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.primaryDark }]} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => { navigation.goBack(); }}
@@ -422,8 +423,8 @@ export default function QuizScreen({ navigation }) {
           <Ionicons name="arrow-back" size={20} color="#fff" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{lesson.title}</Text>
-          <Text style={styles.headerSub}>{lesson.subtitle}</Text>
+          <Text style={styles.headerEyebrow}>{subj.emoji} {subj.short.toUpperCase()} · ИЗПИТВАНЕ</Text>
+          <Text style={styles.headerTitle} numberOfLines={2}>{lesson.title}</Text>
         </View>
         <TouchableOpacity onPress={() => setIsSpeaking(false)}>
           <Ionicons
@@ -435,7 +436,7 @@ export default function QuizScreen({ navigation }) {
       </View>
 
       <View style={styles.scorebar}>
-        <Text style={styles.scoreText}>⭐ {score} точки</Text>
+        <Text style={styles.scoreText}>Теми:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1, marginLeft: 8 }}>
           <View style={{ flexDirection: "row", gap: 6 }}>
             {topicEntries.map(t => (
@@ -586,96 +587,102 @@ export default function QuizScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.primary },
+  safe: { flex: 1, backgroundColor: colors.primaryDark },
   header: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryDark,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     gap: spacing.md,
   },
   backBtn: {
-    width: 36, height: 36,
+    width: 40, height: 40,
     borderRadius: radius.full,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.16)",
     alignItems: "center", justifyContent: "center",
   },
-  headerTitle: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  headerSub: { color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 1 },
+  headerEyebrow: { color: "#9DB8EA", fontSize: 11, fontWeight: "800", letterSpacing: 1.2 },
+  headerTitle: { color: "#fff", fontSize: 16, fontFamily: "display", fontWeight: "700", marginTop: 2 },
+  headerSub: { color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 1 },
   scorebar: {
-    backgroundColor: colors.successLight,
+    backgroundColor: colors.card,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: "#C0DD97",
+    borderBottomColor: colors.border,
   },
-  scoreText: { fontSize: 13, fontWeight: "700", color: "#3B6D11" },
-  pill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.full },
+  scoreText: { fontSize: 12, fontWeight: "800", color: colors.muted, letterSpacing: 0.5 },
+  pill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.full },
   pillDone: { backgroundColor: colors.pillDone },
   pillTodo: { backgroundColor: colors.pillTodo },
-  pillText: { fontSize: 11, fontWeight: "600" },
+  pillText: { fontSize: 12, fontWeight: "700" },
   pillTextDone: { color: colors.pillDoneText },
   pillTextTodo: { color: colors.pillTodoText },
   chatArea: { flex: 1, backgroundColor: colors.background },
-  chatContent: { padding: spacing.lg, gap: 10 },
-  bubbleRowAI: { flexDirection: "row", gap: 8, alignItems: "flex-end" },
+  chatContent: { padding: spacing.lg, gap: 14 },
+  bubbleRowAI: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   bubbleRowUser: { flexDirection: "row", justifyContent: "flex-end" },
   avatarCircle: {
-    width: 32, height: 32,
+    width: 38, height: 38,
     borderRadius: radius.full,
-    backgroundColor: colors.success,
+    backgroundColor: colors.energyLight,
+    borderWidth: 2, borderColor: colors.energy,
     alignItems: "center", justifyContent: "center",
     flexShrink: 0,
   },
   bubbleAI: {
     backgroundColor: colors.bubbleAI,
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
-    padding: 12,
-    maxWidth: "80%",
+    borderRadius: 20,
+    borderTopLeftRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    maxWidth: "84%",
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#17233B", shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
-  bubbleAIText: { fontSize: 15, color: colors.bubbleAIText, lineHeight: 22 },
+  bubbleAIName: { fontSize: 12, fontWeight: "900", color: colors.accentDark, marginBottom: 2, letterSpacing: 0.3 },
+  bubbleAIText: { fontSize: 17, color: colors.bubbleAIText, lineHeight: 25 },
   bubbleUser: {
     backgroundColor: colors.bubbleUser,
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    padding: 12,
-    maxWidth: "80%",
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    maxWidth: "84%",
   },
-  bubbleUserText: { fontSize: 15, color: colors.bubbleUserText, lineHeight: 22 },
+  bubbleUserText: { fontSize: 17, color: colors.bubbleUserText, lineHeight: 25 },
   inputContainer: {
-    backgroundColor: "rgba(255,249,240,0.97)",
+    backgroundColor: colors.card,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
-    paddingBottom: Platform.OS === "ios" ? spacing.xl : spacing.lg,
+    paddingBottom: Platform.OS === "ios" ? spacing.xl : spacing.md,
   },
   chipsRow: { marginBottom: spacing.sm },
   finishBtn: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
     backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: colors.success,
     borderRadius: radius.md,
-    paddingVertical: 8,
+    minHeight: 40,
+    justifyContent: "center",
     alignItems: "center",
   },
-  finishBtnDone: {
-    backgroundColor: colors.card,
-    borderColor: colors.border,
-  },
-  finishBtnText: { color: colors.success, fontSize: 13, fontWeight: "700" },
+  finishBtnDone: { backgroundColor: colors.background },
+  finishBtnText: { color: colors.success, fontSize: 14, fontWeight: "800" },
   chip: {
-    paddingHorizontal: 12, paddingVertical: 6,
+    paddingHorizontal: 14, minHeight: 40, justifyContent: "center",
     borderRadius: radius.full,
-    backgroundColor: colors.card,
+    backgroundColor: colors.background,
     borderWidth: 1, borderColor: colors.border,
   },
-  chipText: { fontSize: 12, color: colors.text },
+  chipText: { fontSize: 14, fontWeight: "700", color: colors.text },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -685,58 +692,59 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     borderWidth: 1.5, borderColor: colors.border,
-    borderRadius: 20,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    backgroundColor: colors.card,
-    fontSize: 15, color: colors.text,
-    maxHeight: 100,
+    borderRadius: 24,
+    paddingHorizontal: spacing.lg, paddingVertical: 10,
+    backgroundColor: colors.background,
+    fontSize: 16, color: colors.text,
+    minHeight: 48,
+    maxHeight: 110,
   },
   micBtn: {
-    width: 46, height: 46,
+    width: 48, height: 48,
     borderRadius: radius.full,
     backgroundColor: colors.primaryLight,
     alignItems: "center", justifyContent: "center",
   },
-  micBtnRecording: { backgroundColor: "#E24B4A" },
+  micBtnRecording: { backgroundColor: colors.danger },
   sendBtn: {
-    width: 46, height: 46,
+    width: 48, height: 48,
     borderRadius: radius.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accent,
     alignItems: "center", justifyContent: "center",
   },
-  sendBtnDisabled: { backgroundColor: "#B5D4F4" },
-  micHint: { textAlign: "center", fontSize: 11, color: colors.muted, marginTop: 5 },
+  sendBtnDisabled: { backgroundColor: "#F2C3A8" },
+  micHint: { textAlign: "center", fontSize: 12, color: colors.muted },
   micHintRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    marginTop: 5,
+    marginTop: 6,
   },
   langToggle: {
     paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: radius.full,
     backgroundColor: colors.primaryLight,
     borderWidth: 1,
     borderColor: colors.primary,
   },
-  langToggleText: { fontSize: 11, color: colors.primaryDark, fontWeight: "600" },
+  langToggleText: { fontSize: 12, color: colors.primaryDark, fontWeight: "700" },
   chipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   textInputActive: { borderColor: colors.primary },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(23,35,59,0.5)",
     justifyContent: "flex-end",
   },
   modalCard: {
     backgroundColor: colors.card,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: spacing.xl,
     maxHeight: "70%",
   },
-  modalTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: spacing.md },
+  modalTitle: { fontSize: 18, fontFamily: "display", fontWeight: "700", color: colors.text, marginBottom: spacing.md },
   vocabWordRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -745,14 +753,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: colors.border,
   },
-  vocabWordText: { fontSize: 15, color: colors.text, fontWeight: "600" },
-  modalEmptyText: { fontSize: 14, color: colors.muted, paddingVertical: spacing.lg },
+  vocabWordText: { fontSize: 16, color: colors.text, fontWeight: "700" },
+  modalEmptyText: { fontSize: 15, color: colors.muted, paddingVertical: spacing.lg },
   modalCloseBtn: {
     marginTop: spacing.lg,
     backgroundColor: colors.primary,
     borderRadius: radius.md,
-    padding: spacing.md,
+    minHeight: 48,
     alignItems: "center",
+    justifyContent: "center",
   },
-  modalCloseBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  modalCloseBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 });

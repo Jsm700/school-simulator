@@ -1,6 +1,13 @@
 // src/screens/DnesScreen.js
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
+import { Text } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLessons } from "../data/lessons";
@@ -283,7 +290,7 @@ const styles = StyleSheet.create({
   dateNavBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   dateNavArrow: { fontSize: 22, color: colors.primary, fontWeight: "700" },
   dateNavArrowDisabled: { color: colors.border },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text, textAlign: "center", minWidth: 160 },
+  headerTitle: { fontSize: 18, fontFamily: "display", fontWeight: "700", color: colors.text, textAlign: "center", minWidth: 160 },
   headerSubtitle: { fontSize: 13, color: colors.muted, marginTop: 4, textAlign: "center" },
   emptyBox: { backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.lg, borderWidth: 0.5, borderColor: colors.border },
   emptyText: { fontSize: 14, color: colors.muted, lineHeight: 20 },

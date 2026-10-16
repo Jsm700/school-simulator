@@ -1,6 +1,12 @@
 // src/screens/ScheduleSettingsScreen.js
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from "react-native";
+import { Text } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getSchedule, setSchedule as saveSchedule, WEEKDAY_LABELS, ALL_SCHOOL_SUBJECTS } from "../services/schedule";
 import { colors, spacing, radius } from "../theme";
@@ -88,7 +94,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backBtn: { fontSize: 15, color: colors.primary },
-  headerTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
+  headerTitle: { fontSize: 16, fontFamily: "display", fontWeight: "700", color: colors.text },
   hint: {
     fontSize: 12,
     color: colors.muted,

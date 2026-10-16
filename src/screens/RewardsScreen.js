@@ -3,8 +3,14 @@
 // магазин с награди (заявката я потвърждава родителят), домашни в риск и глоби.
 import React, { useState, useCallback } from "react";
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
+import { Text } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import {
@@ -315,15 +321,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card,
   },
   backLink: { fontSize: 15, color: colors.primary, fontWeight: "600", paddingVertical: 8 },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
+  headerTitle: { fontSize: 18, fontFamily: "display", fontWeight: "700", color: colors.text },
   card: {
     backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.lg,
     borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
   },
-  levelLine: { fontSize: 20, fontWeight: "800", color: colors.primaryDark, marginBottom: spacing.sm },
-  barTrack: { height: 14, borderRadius: 7, backgroundColor: colors.primaryLight, overflow: "hidden", marginBottom: spacing.sm },
-  barFill: { height: 14, borderRadius: 7, backgroundColor: colors.primary },
-  muted: { fontSize: 13, color: "#6b6a64" },
+  levelLine: { fontSize: 20, fontFamily: "display", fontWeight: "700", color: colors.text, marginBottom: spacing.sm },
+  barTrack: { height: 14, borderRadius: 7, backgroundColor: colors.energyLight, overflow: "hidden", marginBottom: spacing.sm },
+  barFill: { height: 14, borderRadius: 7, backgroundColor: colors.energy },
+  muted: { fontSize: 13, color: colors.muted },
   riskCard: { backgroundColor: "#FDECEA", borderColor: "#E5A39B" },
   riskTitle: { fontSize: 16, fontWeight: "800", color: "#A3271B", marginBottom: spacing.sm },
   riskLine: { fontSize: 14, color: "#5c1a12", marginBottom: 4 },
@@ -331,12 +337,12 @@ const styles = StyleSheet.create({
   half: { flex: 1, alignItems: "center" },
   bigNum: { fontSize: 26, fontWeight: "800", color: colors.text },
   bigBtn: {
-    backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14,
+    backgroundColor: colors.accent, borderRadius: radius.md, paddingVertical: 14,
     alignItems: "center", marginBottom: spacing.lg, minHeight: 48, justifyContent: "center",
   },
   bigBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   btnDisabled: { backgroundColor: "#9aa3ad" },
-  sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.text, marginTop: spacing.sm, marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 17, fontFamily: "display", fontWeight: "700", color: colors.text, marginTop: spacing.sm, marginBottom: spacing.sm },
   shopRow: {
     flexDirection: "row", alignItems: "center", gap: spacing.md,
     backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md,

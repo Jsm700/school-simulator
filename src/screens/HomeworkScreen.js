@@ -7,9 +7,15 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  ActivityIndicator, Image, Alert,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  Image,
+  Alert,
 } from "react-native";
+import { Text } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { colors, spacing, radius } from "../theme";
@@ -228,7 +234,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
   header: { padding: spacing.lg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: colors.text, marginTop: spacing.xs },
+  headerTitle: { fontSize: 20, fontFamily: "display", fontWeight: "700", color: colors.text, marginTop: spacing.xs },
   backLink: { color: colors.primary, fontSize: 15, fontWeight: "600" },
   card: {
     backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 0.5,

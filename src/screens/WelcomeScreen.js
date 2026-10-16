@@ -2,14 +2,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  TextInput,
   Alert,
 } from "react-native";
+import { Text, TextInput } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getTeacherResponse } from "../services/ai";
@@ -43,7 +42,8 @@ async function fetchIndex() {
   const data = await res.json();
   return data.value ? JSON.parse(data.value) : null;
 }
-import { colors, spacing, radius } from "../theme";
+import { colors, spacing, radius, subjectStyle } from "../theme";
+import { getCompletedLessons } from "../services/progress";
 
 function Picker({ label, options, value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -118,6 +118,8 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
   const [kvIndex, setKvIndex] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [familyCode, setFamilyCode] = useState(null);
+  const [completedKeys, setCompletedKeys] = useState([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   React.useEffect(() => {
     fetchIndex().then(idx => { if (idx) setKvIndex(idx); });
@@ -152,6 +154,7 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
   useFocusEffect(
     React.useCallback(() => {
       refreshPoints();
+      getCompletedLessons().then(setCompletedKeys).catch(() => {});
     }, [refreshPoints])
   );
 
@@ -330,6 +333,16 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
     });
   };
 
+  const handleStartInteractive = () => {
+    if (!selectedLesson) return;
+    navigation.navigate("Interactive", {
+      lesson: selectedLesson,
+      studentName: studentName || "Тони",
+      studentGender: studentGender,
+      studentGrade: classVal,
+    });
+  };
+
   const handleStartRevive = () => {
     if (!selectedLesson) return;
     const finalName = studentName || "Тони";
@@ -342,88 +355,111 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
     });
   };
 
+  const lvl = wallet?.level;
+  const riskTotal = wallet ? wallet.at_risk.reduce((s, r) => s + r.amount, 0) : 0;
+  const subjMeta = subjectStyle(subject);
+  const lessons = lessonGroup?.lessons || [];
+  const doneCount = lessons.filter((l) => l.kvKey && completedKeys.includes(l.kvKey)).length;
+  const firstName = (studentName || "").split(" ")[0];
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.primaryDark} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Text style={{ fontSize: 20 }}>🎓</Text>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, selectedLesson && { paddingBottom: 150 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Хедър с поздрав */}
+        <View style={styles.header}>
+          <Text style={styles.headerEyebrow}>УЧКО</Text>
+          <Text style={styles.headerTitle}>
+            {firstName ? `Здравей, ${firstName}!` : "Здравей!"}
+          </Text>
+          <Text style={styles.headerSub}>Какво ще учим днес?</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Учко</Text>
-          <Text style={styles.headerSub}>Изберете урок за изпитване</Text>
-        </View>
+
+        {/* Карта: ниво, точки, цел */}
         <TouchableOpacity
-          style={styles.pointsBadge}
+          style={styles.levelCard}
           onPress={() => navigation.navigate("Rewards")}
+          activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel="Награди и ниво"
         >
           {wallet ? (
             <>
-              <Text style={styles.pointsBadgeText}>Ниво {wallet.level.level} · {wallet.level.name}</Text>
-              <Text style={styles.pointsBadgeSub}>⭐ {wallet.wallet} · 🪙 {wallet.tokens}</Text>
-              {wallet.goal ? (
-                <View style={styles.goalMini}>
-                  <Text style={styles.pointsBadgeSub} numberOfLines={1}>
-                    🎯 {wallet.goal.title} {wallet.goal.saved}/{wallet.goal.cost}
+              <View style={styles.levelTop}>
+                <View style={styles.levelBadge}>
+                  <Text style={styles.levelBadgeNum}>{lvl.level}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.levelName}>{lvl.name}</Text>
+                  <Text style={styles.levelNext}>
+                    {lvl.to == null ? "Най-високото ниво!" : `още ${lvl.remaining} до „${lvl.next_name}“`}
                   </Text>
-                  <View style={styles.goalMiniTrack}>
-                    <View style={[styles.goalMiniFill, { width: `${Math.min(100, Math.round((wallet.goal.saved / wallet.goal.cost) * 100))}%` }]} />
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+              </View>
+              <View style={styles.levelTrack}>
+                <View style={[styles.levelFill, { width: `${Math.round(lvl.progress * 100)}%` }]} />
+              </View>
+              <View style={styles.statsRow}>
+                <View style={styles.statPill}>
+                  <Text style={styles.statText}>⭐ {wallet.wallet}</Text>
+                </View>
+                <View style={styles.statPill}>
+                  <Text style={styles.statText}>🪙 {wallet.tokens}</Text>
+                </View>
+                {wallet.can_exchange > 0 && (
+                  <View style={[styles.statPill, styles.statPillHot]}>
+                    <Text style={[styles.statText, { color: colors.accentDark }]}>+1 🪙 готов!</Text>
                   </View>
+                )}
+              </View>
+              {wallet.goal ? (
+                <View style={styles.goalRow}>
+                  <Text style={styles.goalRowText} numberOfLines={1}>
+                    🎯 {wallet.goal.title}
+                  </Text>
+                  <View style={styles.goalTrack}>
+                    <View style={[styles.goalFill, { width: `${Math.min(100, Math.round((wallet.goal.saved / wallet.goal.cost) * 100))}%` }]} />
+                  </View>
+                  <Text style={styles.goalRowNums}>{wallet.goal.saved}/{wallet.goal.cost}</Text>
                 </View>
               ) : wallet.goals_available > 0 ? (
-                <Text style={styles.pointsBadgeSub}>🎯 Избери голяма цел ›</Text>
+                <Text style={[styles.goalRowText, { marginTop: spacing.sm }]}>🎯 Избери голяма цел ›</Text>
               ) : null}
             </>
           ) : (
-            <Text style={styles.pointsBadgeText}>⭐ …</Text>
-          )}
-          {wallet && wallet.at_risk.length > 0 && (
-            <Text style={styles.riskBadgeText}>⚠ −{wallet.at_risk.reduce((s, r) => s + r.amount, 0)} в риск</Text>
+            <Text style={styles.levelNext}>Зареждам точките…</Text>
           )}
         </TouchableOpacity>
-      </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Днес entry point */}
-        <TouchableOpacity
-          style={styles.dnesCard}
-          onPress={() => navigation.navigate("Dnes", {})}
-        >
-          <Text style={styles.dnesCardIcon}>📅</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.dnesCardTitle}>Днес</Text>
-            <Text style={styles.dnesCardSubtitle}>Виж какво предстои по график</Text>
-          </View>
-          <Text style={styles.dnesCardArrow}>›</Text>
-        </TouchableOpacity>
+        {/* Днес / Домашни */}
+        <View style={styles.tilesRow}>
+          <TouchableOpacity style={[styles.tile, { backgroundColor: colors.primaryLight }]} onPress={() => navigation.navigate("Dnes", {})}>
+            <Text style={styles.tileIcon}>📅</Text>
+            <Text style={[styles.tileTitle, { color: colors.primaryDark }]}>Днес</Text>
+            <Text style={styles.tileSub}>Какво предстои</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tile, { backgroundColor: riskTotal > 0 ? colors.dangerLight : colors.successLight }]}
+            onPress={() => navigation.navigate("Homework", {})}
+          >
+            <Text style={styles.tileIcon}>📚</Text>
+            <Text style={[styles.tileTitle, { color: riskTotal > 0 ? colors.danger : colors.success }]}>Домашни</Text>
+            <Text style={[styles.tileSub, riskTotal > 0 && { color: colors.danger, fontWeight: "800" }]}>
+              {riskTotal > 0 ? `⚠ −${riskTotal} в риск` : "Снимай за проверка"}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Домашни entry point */}
-        <TouchableOpacity
-          style={[styles.dnesCard, styles.homeworkCard]}
-          onPress={() => navigation.navigate("Homework", {})}
-        >
-          <Text style={styles.dnesCardIcon}>📚</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.dnesCardTitle}>Домашни</Text>
-            <Text style={styles.dnesCardSubtitle}>Снимай готово домашно за проверка</Text>
-          </View>
-          <Text style={styles.dnesCardArrow}>›</Text>
-        </TouchableOpacity>
-
-        {/* Student Card — само ако устройството НЕ е вече свързано като конкретно дете
-            (тогава името/полът вече са известни от семейния код) */}
+        {/* Ученик (само ако устройството не е свързано като конкретно дете) */}
         {!isLinkedChild && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>👤 За ученика</Text>
-
+            <Text style={styles.sectionTitle}>👤 За ученика</Text>
             <Text style={styles.pickerLabel}>Име</Text>
             <TextInput
               style={styles.nameInput}
@@ -432,340 +468,342 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
               placeholder="Напр. Иван или Мария"
               placeholderTextColor={colors.muted}
               maxLength={30}
-blurOnSubmit={false}
-returnKeyType="done"
+              blurOnSubmit={false}
+              returnKeyType="done"
             />
-
             <Text style={[styles.pickerLabel, { marginTop: spacing.md }]}>Пол</Text>
             <View style={styles.genderRow}>
               <TouchableOpacity
                 style={[styles.genderBtn, studentGender === "male" && styles.genderBtnActive]}
                 onPress={() => updateStudentGender("male")}
               >
-                <Text style={[styles.genderText, studentGender === "male" && styles.genderTextActive]}>
-                  👦 Момче
-                </Text>
+                <Text style={[styles.genderText, studentGender === "male" && styles.genderTextActive]}>👦 Момче</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.genderBtn, studentGender === "female" && styles.genderBtnActive]}
                 onPress={() => updateStudentGender("female")}
               >
-                <Text style={[styles.genderText, studentGender === "female" && styles.genderTextActive]}>
-                  👧 Момиче
-                </Text>
+                <Text style={[styles.genderText, studentGender === "female" && styles.genderTextActive]}>👧 Момиче</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* Settings Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>⚙️ Настройки</Text>
-          {familyCode && (
-            <View style={styles.familyCodeBox}>
-              <Text style={styles.familyCodeLabel}>👪 Семеен код</Text>
-              <Text style={styles.familyCodeValue}>{familyCode}</Text>
-            </View>
-          )}
-          <Picker
-            label="Клас"
-            options={CLASS_OPTIONS}
-            value={classVal}
-            onChange={updateClassVal}
-          />
-          <Picker
-            label="Предмет"
-            options={getSubjectsForClass(classVal)}
-            value={subject}
-            onChange={updateSubject}
-          />
-          <Picker
-            label="Издателство"
-            options={PUBLISHER_OPTIONS}
-            value={publisher}
-            onChange={updatePublisher}
-          />
-          <TouchableOpacity
-            style={styles.scheduleLink}
-            onPress={() => navigation.navigate("ScheduleSettings", {})}
-          >
-            <Text style={styles.scheduleLinkText}>⚙️ Настрой седмичен график</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.scheduleLink} onPress={handleResetPoints}>
-            <Text style={styles.resetPointsText}>🔄 Занули точките</Text>
-          </TouchableOpacity>
-          {viewingFromParent ? (
-            <TouchableOpacity style={styles.scheduleLink} onPress={handleExitChildView}>
-              <Text style={styles.scheduleLinkText}>👪 Обратно към родителски изглед</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.scheduleLink} onPress={handleDisconnect}>
-              <Text style={styles.resetPointsText}>🔌 Разкачи устройството</Text>
-            </TouchableOpacity>
-          )}
+        {/* Предмети — бърз избор */}
+        <Text style={styles.sectionLabel}>ПРЕДМЕТ · {classVal}. КЛАС</Text>
+        <View style={styles.subjectWrap}>
+          {getSubjectsForClass(classVal).map((opt) => {
+            const m = subjectStyle(opt.value);
+            const on = opt.value === subject;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                onPress={() => updateSubject(opt.value)}
+                style={[styles.subjectChip, on && { backgroundColor: m.color, borderColor: m.color }]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={opt.label}
+              >
+                <Text style={styles.subjectChipEmoji}>{m.emoji}</Text>
+                <Text style={[styles.subjectChipText, on && { color: "#fff" }]}>{m.short}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* Lessons */}
+        {/* Уроци */}
         {lessonGroup ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>📚 Уроци</Text>
-            {lessonGroup.lessons.map((lesson) => (
-              <TouchableOpacity
-                key={lesson.id}
-                style={[
-                  styles.lessonCard,
-                  selectedLesson?.id === lesson.id && styles.lessonCardActive,
-                ]}
-                onPress={() => setSelectedLesson(lesson)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.lessonNum}>
-                  <Text style={styles.lessonNumText}>{lesson.id}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.lessonTitle}>{lesson.title}</Text>
-                  <Text style={styles.lessonSub}>{lesson.subtitle}</Text>
-                </View>
-                {selectedLesson?.id === lesson.id && (
-                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
+          <View style={styles.lessonsBlock}>
+            <View style={styles.lessonsHead}>
+              <Text style={styles.lessonsTitle}>{subjMeta.emoji} Уроци</Text>
+              {lessons.length > 0 && (
+                <Text style={styles.lessonsCount}>
+                  {doneCount}/{lessons.length} минати
+                </Text>
+              )}
+            </View>
+            {lessons.map((lesson) => {
+              const active = selectedLesson?.id === lesson.id;
+              const done = !!lesson.kvKey && completedKeys.includes(lesson.kvKey);
+              return (
+                <TouchableOpacity
+                  key={lesson.id}
+                  style={[styles.lessonCard, active && { borderColor: subjMeta.color, backgroundColor: subjMeta.light }]}
+                  onPress={() => setSelectedLesson(active ? null : lesson)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.lessonNum, { backgroundColor: done ? colors.success : active ? subjMeta.color : subjMeta.light }]}>
+                    {done ? (
+                      <Ionicons name="checkmark" size={18} color="#fff" />
+                    ) : (
+                      <Text style={[styles.lessonNumText, { color: active ? "#fff" : subjMeta.color }]}>{lesson.id}</Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.lessonTitle}>{lesson.title}</Text>
+                    {lesson.hasInteractive ? <Text style={styles.labTag}>🔬 с опит на живо</Text> : null}
+                    {!!lesson.subtitle && <Text style={styles.lessonSub} numberOfLines={2}>{lesson.subtitle}</Text>}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         ) : (
           <View style={styles.infoBanner}>
             <Text style={{ fontSize: 18 }}>💡</Text>
             <Text style={styles.infoBannerText}>
-              За тази комбинация уроците идват скоро. Опитай 4. клас • Човекът и обществото • Клет.
+              За тази комбинация уроците идват скоро. Провери издателството в настройките.
             </Text>
           </View>
         )}
 
-        {/* Start Button(s) */}
-        {selectedLesson && selectedLesson.hasRevive ? (
-          <View style={{ gap: 10 }}>
-            <TouchableOpacity
-              style={styles.startBtn}
-              onPress={handleStartRevive}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.startBtnText}>📖 Оживи урока</Text>
-              <Ionicons name="arrow-forward" size={20} color="#fff" />
+        {/* Настройки — сгънати */}
+        <TouchableOpacity style={styles.settingsToggle} onPress={() => setSettingsOpen((o) => !o)}>
+          <Text style={styles.settingsToggleText}>⚙️ Настройки</Text>
+          <Ionicons name={settingsOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.muted} />
+        </TouchableOpacity>
+        {settingsOpen && (
+          <View style={styles.card}>
+            {familyCode && (
+              <View style={styles.familyCodeBox}>
+                <Text style={styles.familyCodeLabel}>👪 Семеен код</Text>
+                <Text style={styles.familyCodeValue}>{familyCode}</Text>
+              </View>
+            )}
+            <Picker label="Клас" options={CLASS_OPTIONS} value={classVal} onChange={updateClassVal} />
+            <Picker label="Предмет" options={getSubjectsForClass(classVal)} value={subject} onChange={updateSubject} />
+            <Picker label="Издателство" options={PUBLISHER_OPTIONS} value={publisher} onChange={updatePublisher} />
+            <TouchableOpacity style={styles.scheduleLink} onPress={() => navigation.navigate("ScheduleSettings", {})}>
+              <Text style={styles.scheduleLinkText}>🗓️ Настрой седмичен график</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={handleStartExam}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.secondaryBtnText}>Направо на изпит</Text>
+            <TouchableOpacity style={styles.scheduleLink} onPress={handleResetPoints}>
+              <Text style={styles.resetPointsText}>🔄 Занули точките</Text>
             </TouchableOpacity>
+            {viewingFromParent ? (
+              <TouchableOpacity style={styles.scheduleLink} onPress={handleExitChildView}>
+                <Text style={styles.scheduleLinkText}>👪 Обратно към родителски изглед</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.scheduleLink} onPress={handleDisconnect}>
+                <Text style={styles.resetPointsText}>🔌 Разкачи устройството</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.startBtn, !selectedLesson && styles.startBtnDisabled]}
-            onPress={handleStartExam}
-            disabled={!selectedLesson}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.startBtnText}>Започни изпитването</Text>
-            <Ionicons name="arrow-forward" size={20} color="#fff" />
+        )}
+        {viewingFromParent && !settingsOpen && (
+          <TouchableOpacity style={styles.scheduleLink} onPress={handleExitChildView}>
+            <Text style={styles.scheduleLinkText}>👪 Обратно към родителски изглед</Text>
           </TouchableOpacity>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Долна лента с действията за избрания урок */}
+      {selectedLesson && (
+        <View style={styles.actionBar}>
+          <Text style={styles.actionTitle} numberOfLines={1}>{selectedLesson.title}</Text>
+          {selectedLesson.hasInteractive && (
+            <TouchableOpacity style={styles.labBtn} onPress={handleStartInteractive} activeOpacity={0.85}>
+              <Text style={styles.labBtnText}>🔬 Опит на живо</Text>
+            </TouchableOpacity>
+          )}
+          {selectedLesson.hasRevive ? (
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={[styles.startBtn, { flex: 1.3 }]} onPress={handleStartRevive} activeOpacity={0.85}>
+                <Text style={styles.startBtnText}>📖 Оживи урока</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }]} onPress={handleStartExam} activeOpacity={0.85}>
+                <Text style={styles.secondaryBtnText}>Изпит</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.startBtn} onPress={handleStartExam} activeOpacity={0.85}>
+              <Text style={styles.startBtnText}>Започни изпитването</Text>
+              <Ionicons name="arrow-forward" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.primary },
-  dnesCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.primary,
+  safe: { flex: 1, backgroundColor: colors.primaryDark },
+  scroll: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { paddingBottom: spacing.xl },
+  header: {
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: 56,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
   },
-  dnesCardIcon: { fontSize: 22, marginRight: spacing.sm },
-  dnesCardTitle: { fontSize: 15, fontWeight: "700", color: colors.primaryDark },
-  dnesCardSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
-  dnesCardArrow: { fontSize: 20, color: colors.primary },
-  homeworkCard: { backgroundColor: colors.successLight, borderColor: colors.success },
-  scheduleLink: { marginTop: spacing.md, alignItems: "center" },
-  resetPointsText: { fontSize: 12, color: "#B23B3B" },
+  headerEyebrow: { color: "#9DB8EA", fontSize: 12, fontWeight: "800", letterSpacing: 2.5 },
+  headerTitle: { color: "#fff", fontSize: 26, fontFamily: "display", fontWeight: "800", marginTop: 4 },
+  headerSub: { color: "#C9D8F5", fontSize: 15, marginTop: 2 },
+
+  levelCard: {
+    backgroundColor: colors.card,
+    marginHorizontal: spacing.lg,
+    marginTop: -40,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#17233B",
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
+  levelTop: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  levelBadge: {
+    width: 46, height: 46, borderRadius: 14,
+    backgroundColor: colors.energy,
+    alignItems: "center", justifyContent: "center",
+  },
+  levelBadgeNum: { fontSize: 22, fontFamily: "display", fontWeight: "800", color: colors.ink },
+  levelName: { fontSize: 17, fontFamily: "display", fontWeight: "700", color: colors.text },
+  levelNext: { fontSize: 13, color: colors.muted, marginTop: 1 },
+  levelTrack: { height: 10, borderRadius: 5, backgroundColor: colors.energyLight, overflow: "hidden", marginTop: spacing.md },
+  levelFill: { height: 10, borderRadius: 5, backgroundColor: colors.energy },
+  statsRow: { flexDirection: "row", gap: 8, marginTop: spacing.md, flexWrap: "wrap" },
+  statPill: { backgroundColor: colors.background, borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 5 },
+  statPillHot: { backgroundColor: colors.accentLight },
+  statText: { fontSize: 14, fontWeight: "800", color: colors.text },
+  goalRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: spacing.md },
+  goalRowText: { fontSize: 13, fontWeight: "700", color: colors.text, maxWidth: "45%" },
+  goalTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.accentLight, overflow: "hidden" },
+  goalFill: { height: 8, borderRadius: 4, backgroundColor: colors.accent },
+  goalRowNums: { fontSize: 12, fontWeight: "800", color: colors.accentDark },
+
+  tilesRow: { flexDirection: "row", gap: spacing.md, marginHorizontal: spacing.lg, marginTop: spacing.lg },
+  tile: { flex: 1, borderRadius: radius.lg, padding: spacing.lg, minHeight: 104 },
+  tileIcon: { fontSize: 26 },
+  tileTitle: { fontSize: 16, fontFamily: "display", fontWeight: "700", marginTop: 6 },
+  tileSub: { fontSize: 13, color: colors.muted, marginTop: 2 },
+
+  sectionLabel: {
+    fontSize: 12, fontWeight: "800", color: colors.muted, letterSpacing: 1.2,
+    marginHorizontal: spacing.lg, marginTop: spacing.xl, marginBottom: spacing.sm,
+  },
+  subjectWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginHorizontal: spacing.lg },
+  subjectChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, minHeight: 44,
+    borderRadius: radius.full, backgroundColor: colors.card,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+  subjectChipEmoji: { fontSize: 16 },
+  subjectChipText: { fontSize: 15, fontWeight: "700", color: colors.text },
+
+  lessonsBlock: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
+  lessonsHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: spacing.sm },
+  lessonsTitle: { fontSize: 18, fontFamily: "display", fontWeight: "700", color: colors.text },
+  lessonsCount: { fontSize: 13, fontWeight: "700", color: colors.success },
+  lessonCard: {
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    borderRadius: radius.lg, padding: spacing.md,
+    marginBottom: spacing.sm, backgroundColor: colors.card,
+  },
+  lessonNum: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  lessonNumText: { fontSize: 14, fontWeight: "900" },
+  lessonTitle: { fontSize: 15, fontWeight: "800", color: colors.text },
+  lessonSub: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  labTag: { fontSize: 12, fontWeight: "900", color: "#9A6B00", marginTop: 2 },
+  reviveTag: { fontSize: 16 },
+
+  infoBanner: {
+    backgroundColor: colors.warningLight, borderWidth: 1, borderColor: colors.warning,
+    borderRadius: radius.md, padding: spacing.md, flexDirection: "row", gap: spacing.sm,
+    alignItems: "flex-start", marginHorizontal: spacing.lg, marginTop: spacing.lg,
+  },
+  infoBannerText: { flex: 1, fontSize: 13, color: "#633806" },
+
+  settingsToggle: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginHorizontal: spacing.lg, marginTop: spacing.xl, paddingVertical: spacing.md,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  settingsToggleText: { fontSize: 15, fontWeight: "700", color: colors.muted },
+  card: {
+    backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.xl, marginHorizontal: spacing.lg, marginTop: spacing.md,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.text, marginBottom: spacing.lg },
+  scheduleLink: { marginTop: spacing.md, alignItems: "center", paddingVertical: 6 },
+  scheduleLinkText: { fontSize: 14, color: colors.primary, fontWeight: "700" },
+  resetPointsText: { fontSize: 14, color: colors.danger, fontWeight: "700" },
   familyCodeBox: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: colors.primaryLight, borderRadius: radius.md,
-    padding: spacing.md, marginBottom: spacing.md,
+    backgroundColor: colors.primaryLight, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md,
   },
-  familyCodeLabel: { fontSize: 13, color: colors.primaryDark },
-  familyCodeValue: { fontSize: 16, fontWeight: "700", color: colors.primaryDark, letterSpacing: 2 },
-  pointsBadge: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    minHeight: 44,
-    justifyContent: "center",
-    alignItems: "center",
-    maxWidth: 190,
-  },
-  pointsBadgeText: { color: "#fff", fontSize: 13, fontWeight: "800" },
-  pointsBadgeSub: { color: "#fff", fontSize: 12, fontWeight: "600", marginTop: 2 },
-  goalMini: { alignSelf: "stretch", alignItems: "center", marginTop: 2 },
-  goalMiniTrack: {
-    alignSelf: "stretch", height: 5, borderRadius: 3, marginTop: 3,
-    backgroundColor: "rgba(255,255,255,0.3)", overflow: "hidden",
-  },
-  goalMiniFill: { height: 5, borderRadius: 3, backgroundColor: "#FFD54F" },
-  riskBadgeText: {
-    color: "#fff", fontSize: 12, fontWeight: "800", backgroundColor: "#C0392B",
-    borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4, alignSelf: "center",
-  },
-  scheduleLinkText: { fontSize: 12, color: colors.primary },
-  header: {
-    backgroundColor: colors.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-  },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
-  headerSub: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 2 },
-  scroll: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { padding: spacing.lg },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xl,
-    marginBottom: spacing.md,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: spacing.lg },
+  familyCodeLabel: { fontSize: 14, color: colors.primaryDark },
+  familyCodeValue: { fontSize: 16, fontWeight: "800", color: colors.primaryDark, letterSpacing: 2 },
   pickerGroup: { marginBottom: spacing.md },
   pickerLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.muted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.xs,
+    fontSize: 12, fontWeight: "800", color: colors.muted, textTransform: "uppercase",
+    letterSpacing: 0.8, marginBottom: spacing.xs,
   },
   pickerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    backgroundColor: colors.background,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md,
+    padding: spacing.md, backgroundColor: colors.background,
   },
   pickerBtnText: { fontSize: 15, color: colors.text, flex: 1 },
   dropdown: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-    marginTop: 4,
-    overflow: "hidden",
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    backgroundColor: colors.card, marginTop: 4, overflow: "hidden",
   },
   dropdownItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    padding: spacing.md, borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   dropdownItemActive: { backgroundColor: colors.primaryLight },
   dropdownText: { fontSize: 15, color: colors.text },
-  dropdownTextActive: { color: colors.primary, fontWeight: "600" },
+  dropdownTextActive: { color: colors.primary, fontWeight: "700" },
   nameInput: {
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    backgroundColor: colors.background,
-    fontSize: 15,
-    color: colors.text,
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md,
+    padding: spacing.md, backgroundColor: colors.background, fontSize: 15, color: colors.text,
   },
   genderRow: { flexDirection: "row", gap: spacing.sm },
   genderBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: "center",
-    backgroundColor: colors.background,
+    flex: 1, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md,
+    padding: spacing.md, alignItems: "center", backgroundColor: colors.background,
   },
   genderBtnActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  genderText: { fontSize: 15, color: colors.muted, fontWeight: "600" },
+  genderText: { fontSize: 15, color: colors.muted, fontWeight: "700" },
   genderTextActive: { color: colors.primary },
-  lessonCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+
+  actionBar: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xl,
+    shadowColor: "#17233B", shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: -4 },
+    elevation: 12,
+  },
+  actionTitle: { fontSize: 14, fontWeight: "800", color: colors.muted, marginBottom: spacing.sm, textAlign: "center" },
+  actionRow: { flexDirection: "row", gap: spacing.sm },
+  labBtn: {
+    backgroundColor: colors.energyLight, borderWidth: 2, borderColor: colors.energy,
+    borderRadius: radius.lg, minHeight: 48, alignItems: "center", justifyContent: "center",
     marginBottom: spacing.sm,
-    backgroundColor: colors.background,
   },
-  lessonCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  lessonNum: {
-    width: 34, height: 34,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primaryLight,
-    alignItems: "center", justifyContent: "center",
-  },
-  lessonNumText: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
-  lessonTitle: { fontSize: 14, fontWeight: "600", color: colors.text },
-  lessonSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
-  infoBanner: {
-    backgroundColor: "#FFF3CD",
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    flexDirection: "row",
-    gap: spacing.sm,
-    alignItems: "flex-start",
-    marginBottom: spacing.md,
-  },
-  infoBannerText: { flex: 1, fontSize: 13, color: "#633806" },
+  labBtnText: { color: colors.ink, fontSize: 16, fontWeight: "900" },
   startBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
+    backgroundColor: colors.accent, borderRadius: radius.lg, minHeight: 54,
+    paddingHorizontal: spacing.lg, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: spacing.sm,
   },
-  startBtnDisabled: { backgroundColor: "#B5D4F4" },
+  startBtnText: { color: "#fff", fontSize: 17, fontWeight: "900" },
   secondaryBtn: {
-    borderWidth: 1.5, borderColor: colors.primary,
-    borderRadius: radius.md, padding: spacing.md,
-    alignItems: "center",
+    borderWidth: 2, borderColor: colors.primary, borderRadius: radius.lg, minHeight: 54,
+    alignItems: "center", justifyContent: "center", backgroundColor: colors.card,
   },
-  secondaryBtnText: { color: colors.primary, fontSize: 15, fontWeight: "700" },
-  startBtnText: { color: "#fff", fontSize: 17, fontWeight: "800" },
+  secondaryBtnText: { color: colors.primary, fontSize: 16, fontWeight: "900" },
 });
