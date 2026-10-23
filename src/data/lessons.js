@@ -198,6 +198,7 @@ export const PUBLISHER_OPTIONS = [
   { value: "live_beat", label: "Live Beat (Pearson)" },
   { value: "bulvest", label: "Булвест" },
   { value: "anubis", label: "Анубис" },
+  { value: "bg_uchebnik", label: "БГ Учебник" },
 ];
 
 export function getLessons(classVal, subject, publisher) {
