@@ -269,6 +269,31 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
     }
   }, [link, shopDraft, refreshChild]);
 
+  // Нулиране на точките — само от родителя (преди беше в детските настройки и се трие с едно натискане)
+  const onResetPoints = useCallback(() => {
+    const name = children.find((c) => c.id === selectedId)?.name || "детето";
+    Alert.alert(
+      `Занули точките на ${name}?`,
+      "Изтриват се точките, опитът (нивото), жетоните, заявките за награди и глобите. Действието не може да се отмени.",
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Занули",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await fetch(`${BACKEND_URL}/children/${selectedId}/points/reset`, { method: "POST" });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            } catch (e) {
+              Alert.alert("Грешка", "Не успях да нулирам точките. Опитай пак.");
+            }
+            refreshChild();
+          },
+        },
+      ]
+    );
+  }, [children, selectedId, refreshChild]);
+
   const onSaveGoals = useCallback(async () => {
     if (!link?.familyId || !goalDraft) return;
     const clean = goalDraft
@@ -749,6 +774,9 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                       onPress={() => setShopDraft((childData.rewards?.rewards || []).map((r) => ({ ...r })))}
                     >
                       <Text style={styles.smallBtnText}>✏️ Промени наградите</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.smallBtn, styles.cancelBtn, { marginTop: spacing.md }]} onPress={onResetPoints}>
+                      <Text style={styles.smallBtnText}>🔄 Занули точките</Text>
                     </TouchableOpacity>
                   </>
                 )}

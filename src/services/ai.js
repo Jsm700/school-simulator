@@ -1,7 +1,9 @@
 // src/services/ai.js
 const API_URL = "https://frosty-dawn-e989.yassen-mladenov.workers.dev";
 
-export async function getTeacherResponse(messages, lessonContent, studentName, studentGender, studentGrade, lessonKey) {
+// topics: [{key,label}] на урока; mastered: ключовете на вече овладените теми.
+// Елена връща evaluation {verdict: correct|partial|wrong|none, topic} за последния отговор.
+export async function getTeacherResponse(messages, lessonContent, studentName, studentGender, studentGrade, lessonKey, topics = [], mastered = []) {
   const response = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -13,6 +15,8 @@ export async function getTeacherResponse(messages, lessonContent, studentName, s
       studentName: studentName || "ученико",
       studentGender: studentGender || "male",
       studentGrade: studentGrade || "3",
+      topics,
+      mastered,
     }),
   });
   const data = await response.json();
@@ -22,7 +26,12 @@ export async function getTeacherResponse(messages, lessonContent, studentName, s
     audio: data.audio || null,
     audioChunks: data.audioChunks || [],
     expectedAnswerLang: data.expectedAnswerLang || null,
+    evaluation: data.evaluation || null,
   };
+}
+
+export function lessonTopicsFor(lesson) {
+  return (lesson.topics || []).map((key) => ({ key, label: (lesson.topicLabels || {})[key] || key }));
 }
 
 export async function getAudio(text) {

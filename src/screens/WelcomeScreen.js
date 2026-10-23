@@ -11,9 +11,8 @@ import {
 import { Text, TextInput } from "../ui/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getTeacherResponse } from "../services/ai";
+import { getTeacherResponse, lessonTopicsFor } from "../services/ai";
 import { startGreetingPrefetch } from "../services/prefetch";
-import { resetPoints } from "../services/points";
 import { getWallet, getNewEvents } from "../services/rewards";
 import { getLinkedDevice, unlinkDevice, isInChildViewFromParent, exitChildView, syncLinkedChildProfile } from "../services/deviceLink";
 import { useFocusEffect } from "expo-router";
@@ -158,23 +157,6 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
     }, [refreshPoints])
   );
 
-  const handleResetPoints = React.useCallback(() => {
-    Alert.alert(
-      "Занули точките?",
-      "Целият точков дневник ще бъде изтрит. Действието не може да се отмени.",
-      [
-        { text: "Отказ", style: "cancel" },
-        {
-          text: "Занули",
-          style: "destructive",
-          onPress: async () => {
-            await resetPoints();
-            refreshPoints();
-          },
-        },
-      ]
-    );
-  }, [refreshPoints]);
 
   const handleDisconnect = React.useCallback(() => {
     Alert.alert(
@@ -320,7 +302,9 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
       finalName,
       studentGender,
       classVal,
-      selectedLesson.kvKey || ""
+      selectedLesson.kvKey || "",
+      lessonTopicsFor(selectedLesson),
+      []
     );
     prefetchPromise.catch(() => {}); // избягва "Unhandled promise rejection", ако Quiz екранът не го вземе навреме
     startGreetingPrefetch(signature, prefetchPromise);
@@ -575,9 +559,6 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
             <Picker label="Издателство" options={PUBLISHER_OPTIONS} value={publisher} onChange={updatePublisher} />
             <TouchableOpacity style={styles.scheduleLink} onPress={() => navigation.navigate("ScheduleSettings", {})}>
               <Text style={styles.scheduleLinkText}>🗓️ Настрой седмичен график</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.scheduleLink} onPress={handleResetPoints}>
-              <Text style={styles.resetPointsText}>🔄 Занули точките</Text>
             </TouchableOpacity>
             {viewingFromParent ? (
               <TouchableOpacity style={styles.scheduleLink} onPress={handleExitChildView}>

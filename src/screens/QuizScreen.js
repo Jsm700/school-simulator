@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import { getTeacherResponse, getAudio } from "../services/ai";
+import { getTeacherResponse, getAudio, lessonTopicsFor } from "../services/ai";
 import { consumeGreetingPrefetch } from "../services/prefetch";
 import { useLocalSearchParams } from "expo-router";
 import { colors, spacing, radius, subjectStyle } from "../theme";
@@ -25,11 +25,13 @@ import { markLessonCompleted, isLessonCompleted } from "../services/progress";
 import { awardLessonPoints } from "../services/points";
 import { logActivityMinutes } from "../services/deviceLink";
 
-function TopicPill({ label, done }) {
+// state: "done" (овладяна) | "partial" (частично) | undefined (още не)
+function TopicPill({ label, state }) {
+  const done = state === "done", partial = state === "partial";
   return (
-    <View style={[styles.pill, done ? styles.pillDone : styles.pillTodo]}>
-      <Text style={[styles.pillText, done ? styles.pillTextDone : styles.pillTextTodo]}>
-        {done ? "✓ " : ""}{label}
+    <View style={[styles.pill, done ? styles.pillDone : partial ? styles.pillPartial : styles.pillTodo]}>
+      <Text style={[styles.pillText, done ? styles.pillTextDone : partial ? styles.pillTextPartial : styles.pillTextTodo]}>
+        {done ? "✓ " : partial ? "½ " : ""}{label}
       </Text>
     </View>
   );
@@ -81,8 +83,10 @@ export default function QuizScreen({ navigation }) {
   const [displayMessages, setDisplayMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [score, setScore] = useState(0);
+  // Овладени теми — решава ги Елена (оценка на всеки отговор), не броят на репликите
   const [topicsDone, setTopicsDone] = useState({});
+  const topicsDoneRef = useRef({});
+  const lessonTopics = React.useMemo(() => lessonTopicsFor(lesson), [lesson]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [currentAnswerLang, setCurrentAnswerLang] = useState(lesson.lessonLanguage === "en" ? "en" : "bg");
@@ -155,21 +159,17 @@ export default function QuizScreen({ navigation }) {
     });
   }, []);
 
-  const detectTopics = useCallback((text, role) => {
-    const t = text.toLowerCase();
-    const updates = {};
-    let pts = 0;
-    
-    if (role === "user") {
-      if (/румъния|сърбия|македония|гърция|турция/.test(t)) { updates.neighbors = true; pts += 5; }
-      if (/кръстопъ/.test(t)) { updates.crossroads = true; pts += 5; }
-      if (/балкан/.test(t)) { updates.balkan = true; pts += 5; }
-      if (/мусала|рила|родопи|пирин|стара.планина/.test(t)) { updates.mountains = true; pts += 5; }
-      if (/дунав|марица|искър/.test(t)) { updates.rivers = true; pts += 5; }
-    }
-    if (role === "ai" && /браво|отлично|точно|чудесно|страхотно|правилно/i.test(t)) { pts += 2; }
-    if (Object.keys(updates).length > 0) setTopicsDone(prev => ({ ...prev, ...updates }));
-    if (pts > 0) setScore(prev => prev + pts);
+  // Прилага оценката на Елена: correct → темата е овладяна; partial → частично (не се брои)
+  const applyEvaluation = useCallback((evaluation) => {
+    if (!evaluation || !evaluation.topic) return;
+    const cur = topicsDoneRef.current[evaluation.topic];
+    let next = cur;
+    if (evaluation.verdict === "correct") next = "done";
+    else if (evaluation.verdict === "partial" && cur !== "done") next = "partial";
+    if (next === cur) return;
+    const updated = { ...topicsDoneRef.current, [evaluation.topic]: next };
+    topicsDoneRef.current = updated;
+    setTopicsDone(updated);
   }, []);
 
   const sendToAI = useCallback(async (userMsg, isFirst = false, prefetchedPromise = null) => {
@@ -185,7 +185,6 @@ export default function QuizScreen({ navigation }) {
     } else {
       messagesToSend = [...messagesRef.current, { role: "user", content: userMsg }];
       setDisplayMessages(d => [...d, { role: "user", text: userMsg }]);
-      detectTopics(userMsg, "user");
     }
 
     messagesRef.current = messagesToSend;
@@ -200,7 +199,9 @@ export default function QuizScreen({ navigation }) {
             studentName,
             studentGender,
             studentGrade,
-            lesson.kvKey || ""
+            lesson.kvKey || "",
+            lessonTopics,
+            Object.keys(topicsDoneRef.current).filter((k) => topicsDoneRef.current[k] === "done")
           );
 
       if (response.expectedAnswerLang === "en" || response.expectedAnswerLang === "bg") {
@@ -213,7 +214,7 @@ export default function QuizScreen({ navigation }) {
       messagesRef.current = withReply;
       setMessages(withReply);
       setDisplayMessages(d => [...d, { role: "ai", text: finalText }]);
-      detectTopics(response.text || "", "ai");
+      applyEvaluation(response.evaluation);
       exchangeCountRef.current += 1;
       setIsLoading(false);
 
@@ -254,7 +255,7 @@ export default function QuizScreen({ navigation }) {
       setIsLoading(false);
       setTimeout(() => scrollToBottom(), 100);
     }
-  }, [lesson, detectTopics, speakBase64, scrollToBottom, studentGender, studentName]);
+  }, [lesson, lessonTopics, applyEvaluation, speakBase64, scrollToBottom, studentGender, studentName]);
 
   useEffect(() => {
     if (isFirstLoad.current) {
@@ -335,40 +336,59 @@ export default function QuizScreen({ navigation }) {
     setAskingUnknownWord(prev => !prev);
   }, []);
 
+  const masteredCount = lessonTopics.filter((t) => topicsDone[t.key] === "done").length;
+  const allMastered = lessonTopics.length > 0 && masteredCount === lessonTopics.length;
+
   const handleFinishLesson = useCallback(() => {
+    const total = lessonTopics.length;
+    const covered = lessonTopics.filter((t) => topicsDoneRef.current[t.key] === "done").length;
+    const complete = total > 0 && covered === total;
+    if (covered === 0) {
+      Alert.alert(
+        "Още няма овладени теми",
+        "Точки има само за теми, по които си отговорил вярно. Продължи с Елена, докато поне една тема светне в зелено.",
+        [
+          { text: "Продължавам", style: "cancel" },
+          { text: "Излез без точки", style: "destructive", onPress: () => navigation.goBack() },
+        ]
+      );
+      return;
+    }
     Alert.alert(
-      "Приключи урока?",
-      "Урокът ще се отбележи като завършен.",
+      complete ? "Всички теми са овладени! 🎉" : "Приключи урока?",
+      complete
+        ? "Урокът ще се отбележи като минат."
+        : `Овладени теми: ${covered} от ${total}. Точки получаваш само за тях, а урокът ще се брои за минат, когато овладееш всички.`,
       [
-        { text: "Отказ", style: "cancel" },
+        { text: "Продължавам", style: "cancel" },
         {
-          text: "Да, готово",
+          text: complete ? "Готово" : "Приключвам сега",
           onPress: async () => {
-            await markLessonCompleted(lesson.kvKey);
-            setAlreadyCompleted(true);
-            const topicsTotal = (lesson.topics || []).length;
-            const topicsCovered = exchangeCountRef.current;
+            if (complete) {
+              await markLessonCompleted(lesson.kvKey);
+              setAlreadyCompleted(true);
+            }
             const result = await awardLessonPoints({
               lessonKey: lesson.kvKey,
               subject: lesson.subject || "",
               lessonTitle: lesson.title || "",
-              topicsTotal,
-              topicsCovered,
+              topicsTotal: total,
+              topicsCovered: covered,
             });
             const extras = [];
             if (result.isJackpot) extras.push("🎰 ДЖАКПОТ — двойни точки!");
             if (result.sameDayBonus > 0) extras.push(`🔁 +${result.sameDayBonus} за връщане пак днес`);
-            if (result.currentStreak > 1) extras.push(`стрийк: ${result.currentStreak} дни`);
+            if (result.currentStreak > 1) extras.push(`серия: ${result.currentStreak} дни`);
             Alert.alert(
-              "Браво! 🎉",
-              `Спечели ${result.points} точки${extras.length ? `\n${extras.join(" · ")}` : ""}.`,
+              complete ? "Браво! 🎉" : "Добре!",
+              `Спечели ${result.points} точки за ${covered} ${covered === 1 ? "овладяна тема" : "овладени теми"}${extras.length ? `\n${extras.join(" · ")}` : ""}.`,
               [{ text: "Супер", onPress: () => navigation.goBack() }]
             );
           },
         },
       ]
     );
-  }, [lesson.kvKey, lesson.topics, lesson.subject, lesson.title, navigation]);
+  }, [lessonTopics, lesson.kvKey, lesson.subject, lesson.title, navigation]);
 
   useSpeechRecognitionEvent("result", (event) => {
     const segment = event.results?.[0]?.transcript;
@@ -407,11 +427,7 @@ export default function QuizScreen({ navigation }) {
   }, [isRecording, currentAnswerLang]);
 
   const subj = subjectStyle(lesson.subject);
-  const topicEntries = lesson.topics.map(key => ({
-    key,
-    label: lesson.topicLabels[key],
-    done: !!topicsDone[key],
-  }));
+  const topicEntries = lessonTopics.map((t) => ({ key: t.key, label: t.label, state: topicsDone[t.key] }));
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.primaryDark }]} edges={["top"]}>
@@ -436,11 +452,11 @@ export default function QuizScreen({ navigation }) {
       </View>
 
       <View style={styles.scorebar}>
-        <Text style={styles.scoreText}>Теми:</Text>
+        <Text style={styles.scoreText}>Теми {masteredCount}/{lessonTopics.length}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1, marginLeft: 8 }}>
           <View style={{ flexDirection: "row", gap: 6 }}>
             {topicEntries.map(t => (
-              <TopicPill key={t.key} label={t.label} done={t.done} />
+              <TopicPill key={t.key} label={t.label} state={t.state} />
             ))}
           </View>
         </ScrollView>
@@ -463,11 +479,15 @@ export default function QuizScreen({ navigation }) {
         <View style={styles.inputContainer}>
           {lesson.kvKey ? (
             <TouchableOpacity
-              style={[styles.finishBtn, alreadyCompleted && styles.finishBtnDone]}
+              style={[styles.finishBtn, alreadyCompleted && styles.finishBtnDone, allMastered && !alreadyCompleted && styles.finishBtnReady]}
               onPress={alreadyCompleted ? () => navigation.goBack() : handleFinishLesson}
             >
-              <Text style={styles.finishBtnText}>
-                {alreadyCompleted ? "✓ Урокът вече е завършен" : "✅ Приключих урока"}
+              <Text style={[styles.finishBtnText, allMastered && !alreadyCompleted && { color: "#fff" }]}>
+                {alreadyCompleted
+                  ? "✓ Урокът вече е минат"
+                  : allMastered
+                  ? "🎉 Всички теми са овладени — приключи урока"
+                  : "Приключи урока"}
               </Text>
             </TouchableOpacity>
           ) : null}
@@ -622,6 +642,8 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 12, fontWeight: "700" },
   pillTextDone: { color: colors.pillDoneText },
   pillTextTodo: { color: colors.pillTodoText },
+  pillPartial: { backgroundColor: colors.energyLight },
+  pillTextPartial: { color: "#8A6D00" },
   chatArea: { flex: 1, backgroundColor: colors.background },
   chatContent: { padding: spacing.lg, gap: 14 },
   bubbleRowAI: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
@@ -675,6 +697,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   finishBtnDone: { backgroundColor: colors.background },
+  finishBtnReady: { backgroundColor: colors.success },
   finishBtnText: { color: colors.success, fontSize: 14, fontWeight: "800" },
   chip: {
     paddingHorizontal: 14, minHeight: 40, justifyContent: "center",
