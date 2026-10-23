@@ -235,7 +235,14 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
 
   const lessonGroup = (() => {
     const key = `${classVal}_${subject}_${publisher}`;
-    const group = (kvIndex && kvIndex[key]) || getLessons(classVal, subject, publisher);
+    let group = (kvIndex && kvIndex[key]) || getLessons(classVal, subject, publisher);
+    // Няма уроци за избраното издателство, но за този клас и предмет има точно една група
+    // (напр. физика 7 е само „Клет“) — показваме нея, вместо „уроците идват скоро“.
+    if (!group && kvIndex) {
+      const prefix = `${classVal}_${subject}_`;
+      const keys = Object.keys(kvIndex).filter((k) => k.startsWith(prefix));
+      if (keys.length === 1) group = kvIndex[keys[0]];
+    }
     // Инжектира subject във всеки lesson обект — групите в index-а го знаят (през key-а),
     // но самите lesson обекти не го носят; нужен е по-надолу за точковия дневник
     if (!group || !Array.isArray(group.lessons)) return group;
