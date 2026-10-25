@@ -186,6 +186,21 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
     }
   }, [selectedId]);
 
+  // Натискане върху домашно показва подробности; действията са отделни бутони (без случайно „готово“)
+  const openHomeworkDetail = useCallback((hw) => {
+    const lines = [
+      hw.due_date ? `Срок: ${hw.due_date}` : "Без срок",
+      hw.date_assigned ? `Зададено: ${hw.date_assigned}` : null,
+      "",
+      hw.task_text || "",
+    ].filter((x) => x !== null).join("\n");
+    Alert.alert(hw.subject || "Домашно", lines, [
+      { text: "Затвори", style: "cancel" },
+      { text: "🗄 Архивирай", onPress: () => handleArchiveHomework(hw.id) },
+      { text: "✅ Готово", onPress: () => handleToggleHomework(hw.id) },
+    ]);
+  }, [handleArchiveHomework, handleToggleHomework]);
+
   const handleArchiveBulk = useCallback((scope) => {
     if (!selectedId) return;
     const title = scope === "overdue" ? "Архивирай просрочените?" : "Архивирай всички чакащи?";
@@ -561,7 +576,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                 <View key={hw.id} style={styles.homeworkRow}>
                   <TouchableOpacity
                     style={{ flex: 1, flexDirection: "row", alignItems: "flex-start" }}
-                    onPress={() => handleToggleHomework(hw.id)}
+                    onPress={() => openHomeworkDetail(hw)}
                   >
                     <Text style={{ fontSize: 16 }}>⬜</Text>
                     <View style={{ flex: 1, marginLeft: spacing.sm }}>
@@ -570,7 +585,7 @@ export default function ParentDashboardScreen({ onEnterChildView }) {
                       <Text style={styles.homeworkText}>{hw.task_text}</Text>
                     </View>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.archiveBtn} onPress={() => handleArchiveHomework(hw.id)}>
+                  <TouchableOpacity style={styles.archiveBtn} onPress={() => Alert.alert("Архивиране", `Да архивирам ли „${(hw.task_text || "").slice(0, 60)}“?`, [{ text: "Не", style: "cancel" }, { text: "Да", onPress: () => handleArchiveHomework(hw.id) }])}>
                     <Text style={{ fontSize: 16 }}>🗄</Text>
                   </TouchableOpacity>
                 </View>
