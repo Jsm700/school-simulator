@@ -1155,6 +1155,16 @@ async def archive_homework(child_id: str, homework_id: str):
     return {"ok": True}
 
 
+@app.post("/children/{child_id}/homework/{homework_id}/unarchive")
+async def unarchive_homework(child_id: str, homework_id: str):
+    res = await db.homework.update_one(
+        {"id": homework_id, "child_id": child_id}, {"$set": {"archived": False}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Домашното не е намерено")
+    return {"ok": True}
+
+
 @app.post("/children/{child_id}/homework/archive-bulk")
 async def archive_homework_bulk(child_id: str, payload: dict):
     """scope: "overdue" (чакащи с минал срок) или "all_pending" (всички чакащи)."""
