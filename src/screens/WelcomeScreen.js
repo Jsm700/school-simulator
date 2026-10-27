@@ -183,7 +183,12 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
   React.useEffect(() => {
     (async () => {
       try {
-        const savedClass = await AsyncStorage.getItem(STORAGE_KEY_CLASS);
+        // Свързано дете (вкл. „Влез като дете“ от родителя): класът идва от профила му,
+        // не от последно избрания клас на устройството — иначе Тони вижда предметите на Цвети.
+        const link = await getLinkedDevice();
+        const childGrade = link && link.role === "child" && link.childGrade ? String(link.childGrade) : null;
+        const savedClass = childGrade || (await AsyncStorage.getItem(STORAGE_KEY_CLASS));
+        if (childGrade) AsyncStorage.setItem(STORAGE_KEY_CLASS, childGrade).catch(() => {});
         const savedSubject = await AsyncStorage.getItem(STORAGE_KEY_SUBJECT);
         const savedMapRaw = await AsyncStorage.getItem(STORAGE_KEY_SUBJECT_PUBLISHER_MAP);
         const savedMap = savedMapRaw ? JSON.parse(savedMapRaw) : {};
@@ -270,6 +275,7 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
             setStudentName(p.name);
             setStudentGender(p.gender || "male");
           }
+          if (p && p.grade && String(p.grade) !== String(link.childGrade || "")) updateClassVal(String(p.grade));
         });
         return;
       }
