@@ -60,7 +60,7 @@ function pickGrade(g){grade=g;try{localStorage.setItem("uchko_grade",g)}catch(e)
  pickGroup(ks[0]);}
 function pickGroup(k){group=k;setColor(k);
  document.querySelectorAll("#subjects .chip").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
- $("#lessons").innerHTML=(IDX[k].lessons||[]).map(l=>'<div class="les" data-key="'+esc(l.kvKey)+'"><div class="n">'+esc(l.id)+'</div><div><div class="t">'+esc(l.title)+'</div><div class="s">'+esc(l.subtitle||"")+'</div>'+(l.hasInteractive?'<div class="tag">🔬 опит на живо</div>':'')+'</div></div>').join("");
+ $("#lessons").innerHTML=(IDX[k].lessons||[]).map((l,i)=>'<div class="les" data-key="'+esc(l.kvKey)+'"><div class="n">'+esc(String(l.id).length<=4?l.id:i+1)+'</div><div><div class="t">'+esc(l.title)+'</div><div class="s">'+esc(l.subtitle||"")+'</div>'+(l.hasInteractive?'<div class="tag">🔬 опит на живо</div>':'')+'</div></div>').join("");
  $("#lessons").onclick=e=>{const d=e.target.closest(".les");if(d)openLesson(d.dataset.key)};}
 async function openLesson(key){cur=key;
  document.querySelectorAll(".les").forEach(d=>d.classList.toggle("on",d.dataset.key===key));
