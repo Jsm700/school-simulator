@@ -42,6 +42,12 @@ export default function Layout() {
           }}
         />
         <Stack.Screen
+          name="song"
+          options={{
+            animation: "slide_from_right",
+          }}
+        />
+        <Stack.Screen
           name="dnes"
           options={{
             animation: "slide_from_right",

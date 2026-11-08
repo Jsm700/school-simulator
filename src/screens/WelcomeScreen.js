@@ -330,6 +330,11 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
     });
   };
 
+  const handleStartSong = () => {
+    if (!selectedLesson) return;
+    navigation.navigate("Song", { lesson: selectedLesson });
+  };
+
   const handleStartInteractive = () => {
     if (!selectedLesson) return;
     navigation.navigate("Interactive", {
@@ -539,6 +544,7 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
                   <View style={{ flex: 1 }}>
                     <Text style={styles.lessonTitle}>{lesson.title}</Text>
                     {lesson.hasInteractive ? <Text style={styles.labTag}>🔬 с опит на живо</Text> : null}
+                    {lesson.hasSong ? <Text style={styles.songTag}>🎵 с песен</Text> : null}
                     {!!lesson.subtitle && <Text style={styles.lessonSub} numberOfLines={2}>{lesson.subtitle}</Text>}
                   </View>
                 </TouchableOpacity>
@@ -597,10 +603,19 @@ export default function WelcomeScreen({ navigation, onDisconnect, onExitChildVie
       {selectedLesson && (
         <View style={styles.actionBar}>
           <Text style={styles.actionTitle} numberOfLines={1}>{selectedLesson.title}</Text>
-          {selectedLesson.hasInteractive && (
-            <TouchableOpacity style={styles.labBtn} onPress={handleStartInteractive} activeOpacity={0.85}>
-              <Text style={styles.labBtnText}>🔬 Опит на живо</Text>
-            </TouchableOpacity>
+          {(selectedLesson.hasInteractive || selectedLesson.hasSong) && (
+            <View style={styles.actionRow}>
+              {selectedLesson.hasInteractive && (
+                <TouchableOpacity style={[styles.labBtn, { flex: 1 }]} onPress={handleStartInteractive} activeOpacity={0.85}>
+                  <Text style={styles.labBtnText}>🔬 Опит на живо</Text>
+                </TouchableOpacity>
+              )}
+              {selectedLesson.hasSong && (
+                <TouchableOpacity style={[styles.songBtn, { flex: 1 }]} onPress={handleStartSong} activeOpacity={0.85}>
+                  <Text style={styles.labBtnText}>🎵 Песен</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
           {selectedLesson.hasRevive ? (
             <View style={styles.actionRow}>
@@ -709,6 +724,7 @@ const styles = StyleSheet.create({
   lessonTitle: { fontSize: 15, fontWeight: "800", color: colors.text },
   lessonSub: { fontSize: 13, color: colors.muted, marginTop: 2 },
   labTag: { fontSize: 12, fontWeight: "900", color: "#9A6B00", marginTop: 2 },
+  songTag: { fontSize: 12, fontWeight: "900", color: "#C2410C", marginTop: 2 },
   reviveTag: { fontSize: 16 },
 
   infoBanner: {
@@ -789,6 +805,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   labBtnText: { color: colors.ink, fontSize: 16, fontWeight: "900" },
+  songBtn: {
+    backgroundColor: colors.accentLight, borderWidth: 2, borderColor: colors.accent,
+    borderRadius: radius.lg, minHeight: 48, alignItems: "center", justifyContent: "center",
+    marginBottom: spacing.sm,
+  },
   startBtn: {
     backgroundColor: colors.accent, borderRadius: radius.lg, minHeight: 54,
     paddingHorizontal: spacing.lg, flexDirection: "row", alignItems: "center",
