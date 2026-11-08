@@ -1,4 +1,4 @@
-// uchko-web — десктоп версия на Учко (v0: уроци + „Опит на живо“ на голям екран)
+// uchko-web — десктоп версия на Учко (v0: уроци + „Опит на живо“ + „Песен“ на голям екран)
 const PAGE = `<!doctype html><html lang="bg"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Учко</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,7 +32,12 @@ main{display:flex;flex-direction:column;min-height:0;min-width:0}
 .notes ul{margin:0;padding-left:18px}.notes li{margin:0 0 10px;line-height:1.45}
 .term{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 .term b{display:block;margin-bottom:2px}
-iframe{border:0;width:100%;height:100%;background:var(--bg)}
+iframe{border:0;width:100%;height:100%;background:var(--bg);display:block}
+#live{display:flex;flex-direction:column;min-height:0;min-width:0}
+.tabs{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+.tabs button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:7px 16px;font:800 14px Nunito,system-ui,sans-serif;cursor:pointer;color:var(--ink)}
+.tabs button.on{background:var(--subj);border-color:var(--subj);color:#fff}
+.frame{flex:1;min-height:0}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:18px;text-align:center;padding:40px}
 @media (max-width:900px){body{grid-template-columns:1fr;overflow:auto;height:auto}.body{grid-template-columns:1fr}aside{max-height:none}}
 </style></head><body>
@@ -60,7 +65,7 @@ function pickGrade(g){grade=g;try{localStorage.setItem("uchko_grade",g)}catch(e)
  pickGroup(ks[0]);}
 function pickGroup(k){group=k;setColor(k);
  document.querySelectorAll("#subjects .chip").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
- $("#lessons").innerHTML=(IDX[k].lessons||[]).map((l,i)=>'<div class="les" data-key="'+esc(l.kvKey)+'"><div class="n">'+esc(String(l.id).length<=4?l.id:i+1)+'</div><div><div class="t">'+esc(l.title)+'</div><div class="s">'+esc(l.subtitle||"")+'</div>'+(l.hasInteractive?'<div class="tag">🔬 опит на живо</div>':'')+'</div></div>').join("");
+ $("#lessons").innerHTML=(IDX[k].lessons||[]).map((l,i)=>'<div class="les" data-key="'+esc(l.kvKey)+'"><div class="n">'+esc(String(l.id).length<=4?l.id:i+1)+'</div><div><div class="t">'+esc(l.title)+'</div><div class="s">'+esc(l.subtitle||"")+'</div>'+(l.hasInteractive?'<div class="tag">🔬 опит на живо</div>':'')+(l.hasSong?'<div class="tag">🎵 песен</div>':'')+'</div></div>').join("");
  $("#lessons").onclick=e=>{const d=e.target.closest(".les");if(d)openLesson(d.dataset.key)};}
 async function openLesson(key){cur=key;
  document.querySelectorAll(".les").forEach(d=>d.classList.toggle("on",d.dataset.key===key));
@@ -70,7 +75,13 @@ async function openLesson(key){cur=key;
  const v=L.vocabulary||{};
  $("#notes").innerHTML='<h3>Най-важното</h3><ul>'+(L.main_concepts||[]).map(c=>'<li>'+esc(c)+'</li>').join("")+'</ul>'+
   (Object.keys(v).length?'<h3>Речник</h3>'+Object.entries(v).map(([t,d])=>'<div class="term"><b>'+esc(t)+'</b>'+esc(d)+'</div>').join(""):"");
- $("#live").innerHTML=L.hasInteractive?'<iframe src="/opit/'+encodeURIComponent(key)+'" title="Опит на живо"></iframe>':'<div class="empty">Този урок още няма „Опит на живо“.</div>';}
+ const meta=(IDX[group].lessons||[]).find(l=>l.kvKey===key)||{};const ek=encodeURIComponent(key);
+ const views=[];if(L.hasInteractive)views.push(["opit","🔬 Опит на живо"]);if(meta.hasSong)views.push(["pesen","🎵 Песен"]);
+ if(!views.length){$("#live").innerHTML='<div class="empty">Този урок още няма „Опит на живо“.</div>';return}
+ const show=v=>{document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));$(".frame").innerHTML='<iframe src="/'+v+'/'+ek+'" title="'+esc(views.find(x=>x[0]===v)[1])+'" allow="autoplay"></iframe>'};
+ $("#live").innerHTML=(views.length>1?'<div class="tabs">'+views.map(v=>'<button data-v="'+v[0]+'">'+v[1]+'</button>').join("")+'</div>':'')+'<div class="frame"></div>';
+ const tb=$(".tabs");if(tb)tb.onclick=e=>{const v=e.target.closest("button")?.dataset.v;if(v)show(v)};
+ show(views[0][0]);}
 window.addEventListener("message",e=>{const m=e.data||{};if(m.type==="score"||m.type==="done"){const el=$("#score");el.style.display="block";el.textContent=(m.type==="done"?"✓ ":"")+m.right+" / "+m.total}});
 init();
 </script></body></html>`;
@@ -92,11 +103,15 @@ export default {
       const { idx } = await allowedKeys(env);
       return Response.json(idx || {}, { headers: { "cache-control": "max-age=60" } });
     }
-    const m = p.match(/^\/(api\/lesson|opit)\/(.+)$/);
+    const m = p.match(/^\/(api\/lesson|opit|pesen)\/(.+)$/);
     if (m) {
       const key = decodeURIComponent(m[2]);
       const { keys } = await allowedKeys(env);
       if (!keys.has(key)) return new Response("Няма такъв урок", { status: 404 });
+      if (m[1] === "pesen") {
+        const song = await env.LESSONS.get("song-" + key);
+        return song ? html(song) : new Response("Няма песен", { status: 404 });
+      }
       const L = await env.LESSONS.get(key, "json");
       if (!L) return new Response("Няма такъв урок", { status: 404 });
       if (m[1] === "opit") {
