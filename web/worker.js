@@ -37,6 +37,7 @@ iframe{border:0;width:100%;height:100%;background:var(--bg);display:block}
 .tabs{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card)}
 .tabs button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:7px 16px;font:800 14px Nunito,system-ui,sans-serif;cursor:pointer;color:var(--ink)}
 .tabs button.on{background:var(--subj);border-color:var(--subj);color:#fff}
+.tabs .share{margin-left:auto;border-style:dashed}
 .frame{flex:1;min-height:0}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:18px;text-align:center;padding:40px}
 @media (max-width:900px){body{grid-template-columns:1fr;overflow:auto;height:auto}.body{grid-template-columns:1fr}aside{max-height:none}}
@@ -56,18 +57,24 @@ async function init(){IDX=await (await fetch("/api/index")).json();
  $("#grades").innerHTML=gs.map(g=>'<button data-g="'+g+'">'+g+'. клас</button>').join("");
  $("#grades").onclick=e=>{const g=e.target.dataset.g;if(g)pickGrade(g)};
  let saved=null;try{saved=localStorage.getItem("uchko_grade")}catch(e){}
- pickGrade(gs.includes(saved)?saved:gs[0]);}
-function pickGrade(g){grade=g;try{localStorage.setItem("uchko_grade",g)}catch(e){}
+ if(!route())pickGrade(gs.includes(saved)?saved:gs[0]);}
+function parseHash(){const h=decodeURIComponent(location.hash.slice(1));if(!h)return null;const i=h.lastIndexOf("/");return i>0?{key:h.slice(0,i),view:h.slice(i+1)}:{key:h,view:null}}
+function route(){const r=parseHash();if(!r)return false;const gk=Object.keys(IDX).find(k=>(IDX[k].lessons||[]).some(l=>l.kvKey===r.key));if(!gk)return false;
+ pickGrade(gk.split("_")[0],gk);pickGroup(gk,r.key,r.view);return true}
+function setHash(key,v){try{history.replaceState(null,"","#"+encodeURIComponent(key)+(v?"/"+v:""))}catch(e){}}
+window.addEventListener("hashchange",()=>{const r=parseHash();if(r&&r.key!==cur)route()});
+function pickGrade(g,gk){grade=g;try{localStorage.setItem("uchko_grade",g)}catch(e){}
  document.querySelectorAll("#grades button").forEach(b=>b.classList.toggle("on",b.dataset.g===g));
  const ks=Object.keys(IDX).filter(k=>k.startsWith(g+"_"));
  $("#subjects").innerHTML=ks.map(k=>{const s=SUBJ[subjOf(k)]||["📘",k];const pub=(IDX[k].label||"").split("•").pop().trim();return '<button class="chip" data-k="'+k+'">'+s[0]+' '+esc(s[1])+(ks.filter(x=>subjOf(x)===subjOf(k)).length>1?' · '+esc(pub):'')+'</button>'}).join("");
  $("#subjects").onclick=e=>{const k=e.target.closest("button")?.dataset.k;if(k)pickGroup(k)};
- pickGroup(ks[0]);}
-function pickGroup(k){group=k;setColor(k);
+ if(!gk)pickGroup(ks[0]);}
+function pickGroup(k,key,view){group=k;setColor(k);
  document.querySelectorAll("#subjects .chip").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
  $("#lessons").innerHTML=(IDX[k].lessons||[]).map((l,i)=>'<div class="les" data-key="'+esc(l.kvKey)+'"><div class="n">'+esc(String(l.id).length<=4?l.id:i+1)+'</div><div><div class="t">'+esc(l.title)+'</div><div class="s">'+esc(l.subtitle||"")+'</div>'+(l.hasInteractive?'<div class="tag">🔬 опит на живо</div>':'')+(l.hasSong?'<div class="tag">🎵 песен</div>':'')+'</div></div>').join("");
- $("#lessons").onclick=e=>{const d=e.target.closest(".les");if(d)openLesson(d.dataset.key)};}
-async function openLesson(key){cur=key;
+ $("#lessons").onclick=e=>{const d=e.target.closest(".les");if(d)openLesson(d.dataset.key)};
+ if(key){openLesson(key,view);const el=document.querySelector('.les[data-key="'+CSS.escape(key)+'"]');if(el)el.scrollIntoView({block:"center"})}}
+async function openLesson(key,want){cur=key;setHash(key,null);
  document.querySelectorAll(".les").forEach(d=>d.classList.toggle("on",d.dataset.key===key));
  $("#notes").innerHTML='<div class="empty">Зареждам…</div>';$("#score").style.display="none";
  const L=await (await fetch("/api/lesson/"+encodeURIComponent(key))).json();if(cur!==key)return;
@@ -78,10 +85,12 @@ async function openLesson(key){cur=key;
  const meta=(IDX[group].lessons||[]).find(l=>l.kvKey===key)||{};const ek=encodeURIComponent(key);
  const views=[];if(L.hasInteractive)views.push(["opit","🔬 Опит на живо"]);if(meta.hasSong)views.push(["pesen","🎵 Песен"]);
  if(!views.length){$("#live").innerHTML='<div class="empty">Този урок още няма „Опит на живо“.</div>';return}
- const show=v=>{document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));$(".frame").innerHTML='<iframe src="/'+v+'/'+ek+'" title="'+esc(views.find(x=>x[0]===v)[1])+'" allow="autoplay"></iframe>'};
- $("#live").innerHTML=(views.length>1?'<div class="tabs">'+views.map(v=>'<button data-v="'+v[0]+'">'+v[1]+'</button>').join("")+'</div>':'')+'<div class="frame"></div>';
- const tb=$(".tabs");if(tb)tb.onclick=e=>{const v=e.target.closest("button")?.dataset.v;if(v)show(v)};
- show(views[0][0]);}
+ const show=v=>{setHash(key,v);document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));$(".frame").innerHTML='<iframe src="/'+v+'/'+ek+'" title="'+esc(views.find(x=>x[0]===v)[1])+'" allow="autoplay"></iframe>'};
+ $("#live").innerHTML='<div class="tabs">'+(views.length>1?views.map(v=>'<button data-v="'+v[0]+'">'+v[1]+'</button>').join(""):'')+'<button class="share" id="share">🔗 Копирай линк</button></div><div class="frame"></div>';
+ $(".tabs").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.id==="share"){copyLink(b);return}if(b.dataset.v)show(b.dataset.v)};
+ show(views.some(x=>x[0]===want)?want:views[0][0]);}
+async function copyLink(b){const u=location.href;let ok=false;try{await navigator.clipboard.writeText(u);ok=true}catch(e){}
+ if(!ok)prompt("Копирай линка:",u);else{const t=b.textContent;b.textContent="✓ Копирано";setTimeout(()=>b.textContent=t,1500)}}
 window.addEventListener("message",e=>{const m=e.data||{};if(m.type==="score"||m.type==="done"){const el=$("#score");el.style.display="block";el.textContent=(m.type==="done"?"✓ ":"")+m.right+" / "+m.total}});
 init();
 </script></body></html>`;
